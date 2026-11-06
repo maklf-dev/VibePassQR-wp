@@ -709,7 +709,7 @@ final class ECM_Public {
 			$participants = array_filter( array( $primary ) );
 		}
 		$mode     = in_array( $settings['card_print_mode'], array( 'page', 'custom', 'qr' ), true ) ? $settings['card_print_mode'] : 'page';
-		$intro_pdf_url = ! empty( $settings['card_intro_pdf_url'] ) ? esc_url( (string) $settings['card_intro_pdf_url'] ) : '';
+		$intro_pdf_url = ! empty( $settings['card_intro_pdf_url'] ) ? ECM_Events::card_intro_pdf_url( (string) $settings['card_intro_pdf_url'] ) : '';
 		ob_start();
 		?>
 		<div class="ecm-card-page" data-print-mode="<?php echo esc_attr( $mode ); ?>">

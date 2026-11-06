@@ -78,6 +78,32 @@ final class ECM_Events {
 			return $config;
 	}
 
+	/**
+	 * Return a browser-safe URL for the static PDF displayed before a card.
+	 *
+	 * Existing events may still contain a same-site HTTP upload URL from an
+	 * older configuration. Loading that URL inside an HTTPS card page is
+	 * blocked by browsers as mixed content, so upgrade only same-site URLs.
+	 */
+	public static function card_intro_pdf_url( string $url ): string {
+		$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
+		if ( '' === $url ) {
+			return '';
+		}
+
+		$url_host    = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+		$site_host   = strtolower( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ) );
+		$url_scheme  = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+		$site_scheme = strtolower( (string) wp_parse_url( home_url( '/' ), PHP_URL_SCHEME ) );
+		$site_https  = is_ssl() || 'https' === $site_scheme;
+
+		if ( $site_https && 'http' === $url_scheme && $url_host && $url_host === $site_host ) {
+			$url = set_url_scheme( $url, 'https' );
+		}
+
+		return $url;
+	}
+
 	public static function config_for_registration( object $registration ): array {
 		return self::config( self::registration_event( $registration ) );
 	}
@@ -645,7 +671,7 @@ final class ECM_Events {
 				<?php self::event_config_input( $config, 'print_button', 'متن دکمه چاپ' ); ?>
 				<label class="ecm-setting"><span>محتوای چاپ</span><select name="event_settings[card_print_mode]"><option value="page" <?php selected( $config['card_print_mode'] ?? '', 'page' ); ?>>متن صفحه + کارت</option><option value="custom" <?php selected( $config['card_print_mode'] ?? '', 'custom' ); ?>>متن مخصوص + کارت</option><option value="qr" <?php selected( $config['card_print_mode'] ?? '', 'qr' ); ?>>فقط کارت و QR</option></select></label>
 				<?php self::event_config_editor( $config, 'card_print_html', 'متن مخصوص چاپ' ); self::event_config_editor( $config, 'recovery_intro', 'راهنمای بازیابی' ); ?>
-				<label class="ecm-setting"><span>PDF ثابت قبل از کارت</span><input type="url" dir="ltr" name="event_settings[card_intro_pdf_url]" value="<?php echo esc_attr( $config['card_intro_pdf_url'] ?? '' ); ?>" placeholder="https://example.com/wp-content/uploads/event-guide.pdf"><small>لینک مستقیم فایل PDF را وارد کنید. فایل برای همه کارت‌های این رویداد یکسان است، قبل از کارت نمایش داده می‌شود و روی هاست تکثیر نخواهد شد. خالی‌گذاشتن یعنی عدم نمایش.</small></label>
+				<label class="ecm-setting"><span>PDF ثابت قبل از کارت</span><input type="url" dir="ltr" name="event_settings[card_intro_pdf_url]" value="<?php echo esc_attr( $config['card_intro_pdf_url'] ?? '' ); ?>" placeholder="https://example.com/wp-content/uploads/event-guide.pdf"><small>لینک مستقیم HTTPS فایل PDF را وارد کنید. فایل برای همه کارت‌های این رویداد یکسان است، قبل از کارت نمایش داده می‌شود و روی هاست تکثیر نخواهد شد. خالی‌گذاشتن یعنی عدم نمایش.</small></label>
 				<div class="ecm-admin-grid ecm-admin-grid--2"><?php self::event_config_input( $config, 'recovery_title', 'عنوان بازیابی' ); self::event_config_input( $config, 'recovery_button', 'دکمه بازیابی' ); self::event_config_input( $config, 'recovery_not_found', 'پیام پیدا نشدن کارت' ); ?></div>
 				<div class="ecm-subpanel ecm-otp-admin-box">
 					<div class="ecm-panel__title"><div><h3>بازیابی امن با کد پیامکی</h3><p>در حالت فعال، کارت فقط پس از تأیید کد یک‌بارمصرف نمایش داده می‌شود. ارسال OTP فوری است و وارد صف اعلان‌های عادی نمی‌شود.</p></div><label class="ecm-switch"><input type="checkbox" name="event_settings[recovery_otp_enabled]" value="1" <?php checked( ! empty( $config['recovery_otp_enabled'] ) ); ?>><span>OTP الزامی باشد</span></label></div>
@@ -836,7 +862,7 @@ final class ECM_Events {
 			}
 		$config['card_print_mode']  = in_array( $raw['card_print_mode'] ?? '', array( 'page', 'custom', 'qr' ), true ) ? $raw['card_print_mode'] : 'page';
 		$config['card_access_mode'] = 'group_all' === ( $raw['card_access_mode'] ?? '' ) ? 'group_all' : 'own_only';
-		$pdf_url = esc_url_raw( trim( (string) ( $raw['card_intro_pdf_url'] ?? '' ) ), array( 'http', 'https' ) );
+		$pdf_url = self::card_intro_pdf_url( (string) ( $raw['card_intro_pdf_url'] ?? '' ) );
 		if ( $pdf_url && ! wp_http_validate_url( $pdf_url ) ) {
 			wp_die( 'لینک PDF ثابت معتبر نیست. یک URL کامل http یا https وارد کنید.' );
 		}

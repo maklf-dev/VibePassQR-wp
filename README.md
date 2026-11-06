@@ -1,265 +1,94 @@
-# VibePassQR WP 🎟️✨
-
-> Event registration management, QR cards, secure card recovery, and attendance tracking in WordPress, built with **Vibe Coding** energy and just the right amount of seriousness for event day!
-
-[![Latest Release](https://img.shields.io/github/v/release/maklf-dev/VibePassQR-wp?style=flat-square)](https://github.com/maklf-dev/VibePassQR-wp/releases/latest)
-[![Download](https://img.shields.io/badge/Download-Latest%20ZIP-3A70A7?style=flat-square&logo=github)](https://github.com/maklf-dev/VibePassQR-wp/releases/latest/download/event-card-manager.zip)
-[![WordPress](https://img.shields.io/badge/WordPress-6.5%2B-21759B?style=flat-square&logo=wordpress)](https://wordpress.org/)
-[![PHP](https://img.shields.io/badge/PHP-8.0%2B-777BB4?style=flat-square&logo=php)](https://www.php.net/)
-[![License](https://img.shields.io/badge/License-GPL--2.0--or--later-2EA44F?style=flat-square)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
-
-**VibePassQR WP** is the repository name for the **Event Card Manager** plugin, a multi-event WordPress solution for building registration forms, issuing cards and QR codes, recovering cards, managing guests, tracking attendance, and generating management reports.
-
-The idea is simple: organizers should focus on the event itself, not wandering spreadsheets, lost QR codes, or the infamous "My name isn't on the list!" 😄
-
-> [!IMPORTANT]
-> The plugin's technical name, directory name, and Text Domain remain `event-card-manager` to prevent disruptions to upgrades from previous versions, settings, issued cards, and QR codes.
-
-## Download the Latest Version
-
-[![Download the Latest Version](https://img.shields.io/badge/⬇_Download_Latest_Version-event--card--manager.zip-3A70A7?style=for-the-badge)](https://github.com/maklf-dev/VibePassQR-wp/releases/latest/download/event-card-manager.zip)
-
-- Releases page: [GitHub Releases](https://github.com/maklf-dev/VibePassQR-wp/releases)
-- Current source version: `0.6.5`
-- The installable file must also be uploaded to every Release under the consistent name `event-card-manager.zip` so the button above always downloads the latest version.
-
-## Why VibePassQR?
-
-This project has evolved in the spirit of Vibe Coding: real problems, real feedback, real testing, and continuous improvements. But "vibe" doesn't mean cutting corners here. Sensitive operations come with access controls, server-side validation, nonces, secure tokens, technical logging, and a backward-compatible upgrade path.
-
-## Key Features
-
-- Multi-event management with independent forms, text, attendance sessions, and settings
-- Form builder supporting text, mobile numbers, email, options, HTML, and repeatable guest fields
-- Iranian mobile number validation and normalization of Persian and Arabic numerals
-- Free registration or offline financial recording, with an extensible integration point for payment gateways
-- Separate cards and QR codes for the primary registrant and each guest
-- Card recovery using a mobile number, tracking code, and optional SMS-based OTP
-- Secure short links for cards (`/t/`) and attendance (`/a/`), using random tokens
-- Individual or bulk card printing in a multipage document
-- Automatic, operator-only, or hybrid attendance check-in modes
-- Dedicated operator panel with camera scanning, image selection, and manual code entry
-- Support for a primary registrant's QR code, with attendance selection for the registrant, all guests, or selected individuals
-- Server-side prevention of duplicate attendance check-ins
-- Logging of the operator, time, check-in method, and device information
-- Separate event manager and attendance operator roles
-- Automatic restoration of internal roles if they are deleted or their permissions become incomplete
-- Dashboard and reports for people, events, operators, and attendance records
-- CSV export, print views, and linked profiles
-- Test registrations reserved for the main WordPress administrator, with filtering and selective deletion
-- Exclusion of test registrations from operational reports and exports
-- Repeated registration of mobile numbers whose previous records have been marked as test records
-- SMS center, sending queue, attempt logs, and selectable transports
-- Lightweight daily diagnostic reports for plugin operations
-- Appearance settings for colors, typography, spacing, and custom CSS
-- Persian-language, responsive interface suitable for mobile devices and reception desks
-
-## Requirements
-
-| Component | Minimum or Recommendation |
-|---|---|
-| WordPress | Version `6.5` or later |
-| PHP | Version `8.0` or later, on 64-bit hosting |
-| HTTPS | Required for browser camera access |
-| OpenSSL | For secure tokens and encrypted data |
-| ZipArchive | For certain exports and backup packages |
-| Browser | An up-to-date version of Chrome, Edge, Firefox, or Safari |
-
-## Installation
-
-1. Back up your database and the `wp-content/uploads` directory.
-2. Download `event-card-manager.zip` from the Releases section.
-3. In WordPress, go to **Plugins → Add New Plugin → Upload Plugin**.
-4. Install the ZIP file and activate the plugin.
-5. Review and configure the event, form, attendance session, roles, and public pages.
-6. Before using the plugin in a live event, test registration, recovery, OTP, and attendance check-in.
-
-### Upgrading from a Previous Version
-
-- Replace the existing version with the new ZIP package.
-- Do not uninstall the previous plugin. A complete uninstall may delete plugin data according to its uninstall policy.
-- After upgrading, open the dashboard and diagnostics page once to trigger and verify any required migrations.
-- Cards, QR codes, registration IDs, and settings from previous versions are preserved during a normal upgrade.
-
-Full guide: [Installation and Upgrading](docs/INSTALLATION-UPGRADE-FA.md)
-
-## General Workflow
-
-1. The main administrator creates an event and a registration form.
-2. A user registers themselves and, if permitted, their guests.
-3. The plugin generates an individual card, QR code, and tracking code for each person.
-4. Cards are retrieved from the result page or through the secure recovery process.
-5. An operator checks the QR code using the camera or a manually entered code.
-6. Attendance is saved only after checking permissions, the event, the attendance session, and whether the person has already checked in.
-7. Authorized managers view the reports and exports permitted by their access level.
-
-## Roles and Permissions
-
-| Role | Purpose |
-|---|---|
-| Main WordPress Administrator | Full settings, event management, reports, tools, test registrations, and selective deletion |
-| Event Manager | View and manage authorized event sections and reports |
-| Attendance Manager | Operational access to the reception panel and authorized attendance check-ins |
-
-Event access can also be restricted to specific users in addition to role-based restrictions. Permissions are checked on the server, rather than relying solely on hiding buttons.
-
-## Default Page Slugs
-
-| Slug | Purpose |
-|---|---|
-| `event-register` | Event registration |
-| `event-recovery` | Card recovery |
-| `event-card` | Card display |
-| `event-attendance` | Attendance check-in or confirmation |
-| `event-reports` | Authorized reports |
-| `event-panel` | Login and dedicated manager/operator panel |
-
-Page names and creation can be managed or restored through the plugin's administration tools.
-
-## Cards, QR Codes, and Recovery
-
-- Each registrant and guest has a separate identity and card.
-- A primary registrant's QR code can display the registrant and associated guests for group selection.
-- A guest's QR code retrieves only that guest.
-- Recovery uses a mobile number and, when necessary, a tracking code.
-- Optional OTP codes are time-limited, single-use, and subject to attempt and resend limits.
-- Raw OTP codes are never stored in reports, the SMS queue, or technical logs.
-
-## Attendance Check-In
-
-Operators can check QR codes using the browser camera, a saved image, or a manually entered code. The plugin accepts full links, QR codes, tokens, and 10-character ticket codes. Access controls, attendance-session time windows, and duplicate-check-in prevention are enforced on the server.
-
-To use the camera:
-
-- The website must use HTTPS.
-- The browser must be granted camera permission.
-- The required QR library is bundled with the plugin, so scanning does not depend on a CDN.
-
-## Test Registrations
-
-The actual main WordPress administrator can mark selected records as "test" records. A test record:
-
-- Is excluded from other managers' operational reports and exports.
-- Is exempt from duplicate mobile number restrictions, allowing test scenarios to be repeated.
-- Remains usable for testing cards, OTP, SMS, and attendance.
-- Can only be restored to normal status or permanently deleted by the main administrator.
-
-> [!WARNING]
-> Selective deletion is permanent and also removes data associated with the record. Back up your data first and verify the operation on a test record.
-
-## SMS and OTP
-
-The plugin core is designed to be independent of the messaging service. Available transports may vary depending on the installation environment. Regular notifications support queuing and retries; OTP messages are sent immediately because they are time-sensitive.
-
-Before enabling live sending:
-
-1. Complete the SMS service settings.
-2. Run connection and credential tests.
-3. Send a test message.
-4. Test OTP using a phone number under your control.
-5. Check the sending queue and delivery logs.
-
-Never commit API keys, SMS panel passwords, or customer information to Git.
-
-## Payments
-
-No operational bank payment gateway is configured by default in this version. Registration without a gateway is saved with the `offline_confirmed` status; it does not falsely indicate that a bank payment succeeded. Developers can implement a payment gateway integration through the extensible `ecm_payment_result` integration point.
-
-## Reports and Diagnostics
-
-The plugin provides management reports, CSV exports, print views, and daily technical reports. Technical reporting is designed to help diagnose errors, response times, memory usage, query counts, OTP status, SMS status, and attendance operations.
-
-Before posting a report in a public Issue:
-
-- Remove or anonymize mobile numbers, names, email addresses, and registration data.
-- Do not publish card tokens, QR codes, cookies, or login information.
-- Remove API keys, SMS service passwords, and confidential hosting details.
-
-## Project Structure
-
-```text
-VibePassQR-wp/
-├── assets/
-│   ├── css/                 # Public and admin styles
-│   ├── js/                  # Public UI, QR, PDF, and operator panel
-│   └── vendor/              # Required and permitted dependencies
-├── docs/                    # Guides, tests, and release notes
-├── includes/                # Core plugin classes and logic
-├── languages/               # Translation files
-├── templates/               # Display templates
-├── event-card-manager.php   # Main plugin file
-├── uninstall.php            # Complete uninstall policy
-├── CHANGELOG.md             # Change history
-├── THIRD-PARTY-NOTICES.md   # Third-party dependency licenses
-└── README.md                # This file
-```
-
-> Plugin files must be placed directly in the repository root. The main file must be at `VibePassQR-wp/event-card-manager.php`, not `VibePassQR-wp/event-card-manager/event-card-manager.php`.
-
-## Documentation
-
-- [Installation and Upgrading Guide](docs/INSTALLATION-UPGRADE-FA.md)
-- [Operations, Security, and Maintenance](docs/OPERATIONS-SECURITY-FA.md)
-- [Acceptance Testing](docs/EMPLOYER-ACCEPTANCE-TEST-FA.md)
-- [Release Notes for 0.6.5](docs/RELEASE-NOTES-0.6.5-FA.md)
-- [QA Report for Version 0.6.5](docs/QA-REPORT-0.6.5-FA.md)
-- [Complete Change History](CHANGELOG.md)
-
-If you have separate HTML documentation, place it in this directory using a consistent name such as `docs/index.html`, and keep its version information aligned with the latest Release.
-
-## Local Development
-
-1. Clone the repository into `wp-content/plugins/`.
-2. Make sure the active plugin directory is named `event-card-manager`, or link the project into your WordPress environment under that name.
-3. Run compatible WordPress and PHP versions.
-4. After code changes, test registration, recovery, OTP, cards, QR codes, and attendance scenarios.
-5. Apply database changes only through additive modifications with a backward-compatible upgrade path.
-
-At runtime, the project does not require a mandatory build process or a CDN for QR scanning.
-
-## Security and Privacy
-
-- Inputs must be validated and sanitized on the server.
-- Outputs must be escaped according to their context in WordPress.
-- Administrative operations must require valid capabilities and nonces.
-- Security must not depend on keeping URLs or endpoint names secret.
-- Secrets, `.env` files, `wp-config.php`, actual customer reports, databases, and backups must never be committed.
-- Report security vulnerabilities privately first, and do not publicly disclose exploitable details before a fix is available.
-
-For production deployments, backups, HTTPS, restricted administrative access, and testing new versions in a staging environment are strongly recommended.
-
-## Current Limitations
-
-- A real bank payment gateway requires separate configuration or development.
-- SMS delivery depends on the selected service and the hosting environment's network conditions.
-- Camera access requires HTTPS, a compatible browser, and user permission.
-- High-traffic event performance must be load-tested against the resources of the actual hosting and database environment.
-- This project does not replace your overall WordPress backup and security policies.
-
-## Contributing
-
-Issues and Pull Requests are welcome. Please:
-
-1. Open an Issue before making major changes.
-2. Do not attach sensitive information or real customer data.
-3. Keep changes small, reviewable, and backward-compatible.
-4. Explain how to test your changes and their impact on the database, roles, and upgrade path.
-5. Check the Persian interface and RTL/LTR behavior on desktop and mobile.
-
-## Proposed Roadmap
-
-- Complete automated tests for critical workflows
-- Add payment integration layers through independent adapters
-- Further optimize reports for large datasets
-- Expand English documentation and translation files
-- Set up automated Release and quality assurance workflows with GitHub Actions
-
-## License and Credits
-
-This project is released under the **GPL-2.0-or-later** license. Third-party library licenses are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-
-Built by [maklf-dev](https://github.com/maklf-dev), with code, coffee, testing, and a carefully measured dose of Vibe ☕💻
-
----
-
-If VibePassQR helps shorten a long line at your event, give the repository a ⭐. Stars won't make queries run faster, but they definitely boost the developer's mood! 😄
+# Event Card Manager — 0.6.6
+
+افزونه چندرویدادی وردپرس برای ثبت‌نام، صدور کارت و QR، بازیابی کارت، ثبت حضور کاربر یا اپراتور، مدیریت مهمان‌ها و گزارش‌های مدیریتی.
+
+## پیش‌نیازها
+
+- WordPress 6.5 یا جدیدتر
+- PHP 8.0 یا جدیدتر روی هاست ۶۴ بیتی
+- HTTPS برای استفاده از دوربین مرورگر
+- OpenSSL برای توکن‌های کوتاه رمز‌شده و آرشیوهای قدیمی
+- ZipArchive برای دانلود یک‌جای تاریخچه
+
+## نصب و ارتقا
+
+پیش از نصب از دیتابیس و `wp-content/uploads` نسخه پشتیبان تهیه کنید. برای ارتقا، ZIP جدید را روی نسخه قبلی جایگزین کنید و افزونه قبلی را Uninstall نکنید. نسخه 0.6.6 به‌صورت افزایشی روی نسخه 0.6.5 و نسخه‌های قبلی نصب می‌شود و شناسه ثبت‌نام، QRهای صادرشده، کارت‌ها، برگه‌ها و تنظیمات را حفظ می‌کند.
+
+راهنمای کامل: [نصب و ارتقا](docs/INSTALLATION-UPGRADE-FA.md)
+
+## امکانات اصلی
+
+- رویدادهای مستقل با فرم، نوبت حضور، متن‌ها و تنظیمات اختصاصی
+- فرم‌ساز شامل متن، تلفن، ایمیل، انتخاب‌ها، HTML و مهمان تکرارشونده
+- اعتبارسنجی قطعی موبایل ایران برای معرف و مهمان، پیش از ذخیره اطلاعات یا ساخت پیامک
+- ثبت‌نام کاملاً رایگان یا ثبت مالی بدون درگاه و بدون پرداخت ساختگی
+- کارت و QR مستقل برای معرف و هر مهمان
+- بازیابی یکپارچه با موبایل یا کد پیگیری و OTP پیامکی شش‌رقمی اختیاری برای هر رویداد
+- نمایش و دانلود PDF راهنمای ثابت هر رویداد پیش از کارت، بدون تکثیر فایل
+- سیاست دسترسی کارت در هر رویداد: فقط کارت شخصی یا مجموعه کارت‌های معرف و مهمان‌ها
+- چاپ تکی یا گروهی کارت‌های HTML پیش‌فرض در سند چندصفحه‌ای مرتب
+- لینک‌های کوتاه مستقل `/t/` برای کارت و `/a/` برای حضور با توکن ۱۲۸ بیتی
+- حالت حضور توسط کاربر، فقط اپراتور یا ترکیبی
+- ACL مستقل برای نقش‌ها و کاربران هر رویداد
+- پنل اختصاصی اپراتور با دوربین، تصویر، ورود دستی و ثبت AJAX
+- پذیرش لینک، QR یا کد بلیت ده‌کاراکتری در ورود دستی اپراتور، بدون حساسیت به بزرگی حروف
+- QR معرف برای نمایش معرف و همه مهمانان؛ QR مهمان فقط برای همان مهمان
+- جلوگیری سروری از ثبت تکراری و ذخیره اپراتور، ساعت و دستگاه
+- داشبورد، فهرست، CSV، چاپ و پروفایل متصل اشخاص، اپراتورها و رویدادها
+- تنظیم ظاهر، رنگ، تایپوگرافی، فاصله، عرض صفحات و CSS اختصاصی
+- مدیریت برگه‌ها، فایل‌ها، فضای مصرفی، پشتیبان و پاک‌سازی تاریخچه
+- گزارش روزانه کم‌حجم از ترافیک و عملیات خود افزونه با دانلود و حذف مستقل
+- capabilityهای مستقل و سازگار با User Role Editor
+- بازسازی خودکار نقش‌های داخلی «مدیر رویداد» و «مدیر ثبت حضور» در صورت حذف یا ناقص‌شدن دسترسی‌های ضروری
+- مدیریت گروهی ثبت‌نام‌ها فقط برای مدیر کل: علامت‌گذاری تستی، بازگردانی و حذف کامل انتخابی
+- فیلتر ثبت‌نام‌های اصلی/تستی در گزارش مدیر کل و حذف خودکار داده‌های تستی از گزارش‌های عملیاتی و خروجی مدیران
+- جلوگیری اختیاری از ثبت‌نام تکراری معرف بر اساس موبایل، به‌صورت مستقل برای هر رویداد
+- مرکز پیامک تب‌بندی‌شده با قالب مستقل هر وضعیت و قالب مشترک یا مجزای معرف/مهمان
+- گزارش جامع پیامک با فیلترهای عملیاتی و خروجی CSV فیلترشده
+- پترن OTP داخلی `sqg5qg0uahtq43y` با اعتبار ۵ دقیقه، ارسال مجدد پس از ۲ دقیقه، مصرف یک‌باره و عدم ذخیره کد خام
+- رابط عمومی تیره، کنترل‌های لمسی و اصلاحات ویژه Safari/iOS؛ پنل مدیریت فشرده و واکنش‌گرا
+
+## مسیرهای پیش‌فرض
+
+`event-register`، `event-recovery`، `event-card`، `event-attendance`، `event-reports` و `event-panel`
+
+## وضعیت پیامک و درگاه
+
+نسخه 0.6.6 هسته پیامک را از سرویس ارسال جدا نگه می‌دارد. مسیر اصلی «واسط IPPanel SMS Pro GV» است و از همان تنظیمات امن افزونه واسط استفاده می‌کند؛ بنابراین نام کاربری یا رمز آن در Event Card Manager کپی یا ثبت نمی‌شود. Edge API و WP‑SMS نیز به‌عنوان Transportهای قابل انتخاب باقی مانده‌اند. اتصال مستقیم Legacy با همان تنظیمات Gravity فقط در مرکز آزمون ارائه می‌شود و درگاه عملیاتی نیست.
+
+در ورود به صفحه پیامک، تست اتصال به‌صورت غیرمسدودکننده اجرا می‌شود و موجودی با جداکننده هزارگان نمایش داده می‌شود. هر وضعیت پیامک روش ارسال مستقل دارد و می‌تواند قالب مشترک یا قالب جدا برای معرف و مهمان داشته باشد. سیاست پیامک از تنظیم سراسری به رویداد و سپس نوبت ارث می‌رسد. کتابخانه پترن، پترن مالی `is35i844i289qa9` را با متغیرهای `name`، `phone`، `pay` و `date` در اختیار تنظیمات قرار می‌دهد. لینک کارت با توکن کوتاه و امن ساخته می‌شود و لینک‌های بلند نسخه قبلی همچنان معتبرند.
+
+ارسال اعلان‌های عادی در صف پس‌زمینه انجام می‌شود و برای هر تلاش، نتیجه فنی جدا ثبت می‌گردد. OTP به‌دلیل محدودیت زمانی به‌صورت فوری ارسال می‌شود، اما نتیجه آن با محتوای محرمانهٔ حذف‌شده در همان گزارش جامع ثبت خواهد شد. ارتقا وضعیت فعال/متوقف موجود را تغییر نمی‌دهد؛ پیش از فعال‌سازی، تست اتصال و سپس آزمون OTP اجرا کنید. در تنظیمات IPPanel GV، دامنه باید صریحاً `https://ippanel.com` باشد.
+
+درگاه واقعی داخل این بسته پیکربندی نشده است. ثبت بدون درگاه با وضعیت مستقل `offline_confirmed` ذخیره می‌شود و هرگز به‌عنوان پرداخت بانکی موفق گزارش نمی‌شود. اتصال درگاه از فیلتر `ecm_payment_result` قابل توسعه است.
+
+## مستندات
+
+- [نصب و ارتقا](docs/INSTALLATION-UPGRADE-FA.md)
+- [آزمون پذیرش کارفرما](docs/EMPLOYER-ACCEPTANCE-TEST-FA.md)
+- [عملیات، امنیت و نگهداری](docs/OPERATIONS-SECURITY-FA.md)
+- [یادداشت انتشار 0.4.0](docs/RELEASE-NOTES-0.4.0-FA.md)
+- [برنامه آزمون پیامک 0.4.0](docs/TEST-PLAN-0.4.0-FA.md)
+- [گزارش QA این بسته](docs/QA-REPORT-0.4.0-FA.md)
+- [یادداشت انتشار و آزمون 0.4.2](docs/RELEASE-NOTES-0.4.2-FA.md)
+- [گزارش کنترل ساختاری 0.4.2](docs/QA-REPORT-0.4.2-FA.md)
+- [یادداشت انتشار 0.5.0](docs/RELEASE-NOTES-0.5.0-FA.md)
+- [برنامه تست قالب و بلیت پویا](docs/TEST-PLAN-0.5.0-FA.md)
+- [گزارش QA نسخه 0.5.0](docs/QA-REPORT-0.5.0-FA.md)
+- [یادداشت انتشار 0.5.1-alpha.2](docs/RELEASE-NOTES-0.5.1-alpha.2-FA.md)
+- [برنامه آزمون 0.5.1-alpha.2](docs/TEST-PLAN-0.5.1-alpha.2-FA.md)
+- [گزارش کنترل ساختاری 0.5.1-alpha.2](docs/QA-REPORT-0.5.1-alpha.2-FA.md)
+- [نقشه تکمیل تا 0.6.0](docs/ROADMAP-TO-0.6.0-FA.md)
+- [یادداشت انتشار 0.6.0](docs/RELEASE-NOTES-0.6.0-FA.md)
+- [یادداشت انتشار و آزمون اصلاحیه 0.6.1](docs/RELEASE-NOTES-0.6.1-FA.md)
+- [یادداشت انتشار و آزمون نسخه 0.6.2](docs/RELEASE-NOTES-0.6.2-FA.md)
+- [یادداشت انتشار و آزمون نسخه 0.6.4](docs/RELEASE-NOTES-0.6.4-FA.md)
+- [گزارش کنترل ساختاری نسخه 0.6.4](docs/QA-REPORT-0.6.4-FA.md)
+- [یادداشت انتشار و آزمون نسخه 0.6.5](docs/RELEASE-NOTES-0.6.5-FA.md)
+- [گزارش کنترل ساختاری نسخه 0.6.5](docs/QA-REPORT-0.6.5-FA.md)
+- [یادداشت انتشار و آزمون نسخه 0.6.6](docs/RELEASE-NOTES-0.6.6-FA.md)
+- [برنامه آزمون 0.6.0](docs/TEST-PLAN-0.6.0-FA.md)
+- [گزارش QA نسخه 0.6.0](docs/QA-REPORT-0.6.0-FA.md)
+- [یادداشت انتشار پایدار 0.3.0](docs/RELEASE-NOTES-0.3.0-FA.md)
+
+مجوز: GPL-2.0-or-later. مجوز کتابخانه‌های QR و PDF در `THIRD-PARTY-NOTICES.md` قرار دارد.

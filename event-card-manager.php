@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Event Card Manager
- * Plugin URI:  https://github.com/maklf-dev/event-card-manager
+ * Plugin URI:  https://github.com/maklf-dev/VibePassQR-wp
  * Description: فرم ثبت‌نام، پرداخت قابل توسعه، کارت QR امن، بازیابی کارت، حضور و غیاب و گزارش مدیریتی.
- * Version:     0.6.5
+ * Version:     0.6.6
  * Author:      maklf-dev
  * License:     GPL-2.0-or-later
  * Text Domain: event-card-manager
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'ECM_VERSION', '0.6.5' );
+define( 'ECM_VERSION', '0.6.6' );
 define( 'ECM_FILE', __FILE__ );
 define( 'ECM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'ECM_URL', plugin_dir_url( __FILE__ ) );
