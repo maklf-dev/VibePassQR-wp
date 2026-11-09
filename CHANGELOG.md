@@ -1,3 +1,12 @@
+## 0.7.0-alpha.1 — 2026-11-09
+
+- Additive workflow schema (versions, instances, files) and audit relationship.
+- Default-off, per-event opt-in workflow domain layer with immutable version publishing.
+- Admin-only internal draft persistence and optimistic-concurrency protected stage change.
+- Deferred schema upgrade on privileged admin requests; no front-end DDL.
+- Workflow readiness in diagnostics; no public workflow routes activated.
+- Experimental only: no approval, receipt upload, OTP tracking or card-issuance integration yet.
+
 # Changelog
 
 ## 0.6.7 — 2026-11-09

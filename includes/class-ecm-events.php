@@ -116,6 +116,7 @@ final class ECM_Events {
 				$config[ $key ] = $global[ $key ];
 			}
 		}
+		$config['registration_process'] = 'classic'; // All existing events remain on the legacy registration path.
 		$config['sms_inherit'] = 1;
 		$config['sms_mode']    = 'pattern' === ( $global['sms_mode'] ?? '' ) ? 'pattern' : 'webservice';
 		$config['sms_rules']   = self::global_sms_rules( $global );

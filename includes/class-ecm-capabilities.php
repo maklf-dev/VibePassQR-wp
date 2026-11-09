@@ -14,6 +14,7 @@ final class ECM_Capabilities {
 			'access_ecm'              => 'ورود به منوی کارت رویداد',
 			'view_ecm_reports'         => 'مشاهده و خروجی گزارش‌ها',
 			'manage_ecm_events'        => 'مدیریت رویدادها و نوبت‌ها',
+			'manage_ecm_reviews'       => 'بررسی و تأیید درخواست‌های ثبت‌نام (نسخه آینده)',
 			'manage_ecm_attendance'    => 'مدیریت حضور و غیاب',
 			'record_ecm_attendance'    => 'ثبت حضور شرکت‌کنندگان',
 			'view_own_ecm_attendance'  => 'مشاهده حضورهای ثبت‌شده توسط خود',

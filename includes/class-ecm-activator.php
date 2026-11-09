@@ -268,7 +268,12 @@ final class ECM_Activator {
 		ECM_Tickets::install();
 		self::create_pages();
 		ECM_Upgrade::install();
-		update_option( 'ecm_db_version', ECM_VERSION, false );
+		// Additive migration only. A failed schema install must not mark this
+		// release as complete; next authorized admin request may retry.
+		if ( ECM_Workflow_Schema::install() ) {
+			update_option( 'ecm_db_version', ECM_VERSION, false );
+		}
+
 		flush_rewrite_rules();
 	}
 

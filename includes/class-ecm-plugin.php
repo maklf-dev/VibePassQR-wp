@@ -42,8 +42,26 @@ final class ECM_Plugin {
 	}
 
 	public function maybe_upgrade(): void {
-		if ( ECM_VERSION !== get_option( 'ecm_db_version' ) ) {
-			ECM_Activator::activate();
+		$installed = (string) get_option( 'ecm_db_version', '' );
+		if ( ECM_VERSION === $installed || ( $installed && version_compare( $installed, ECM_VERSION, '>' ) ) ) {
+			return;
+		}
+		// Never run DDL in public registration, ticket, OTP or SMS requests.
+		// Site administrators complete the migration on a normal admin load.
+		if ( ! is_admin() || wp_doing_ajax() || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( $installed && version_compare( $installed, '0.6.7', '>=' ) ) {
+			if ( ECM_Workflow_Schema::install() ) {
+				ECM_Capabilities::install();
+				update_option( 'ecm_db_version', ECM_VERSION, false );
+				ECM_Diagnostics::record( 'migration', 'Workflow schema installed', array( 'version' => ECM_VERSION ) );
+			}
+			return;
+		}
+		// Older releases still require their original legacy migrations.
+		ECM_Activator::activate();
+		if ( ECM_VERSION === (string) get_option( 'ecm_db_version', '' ) ) {
 			ECM_Diagnostics::record( 'migration', 'Plugin schema upgraded', array( 'version' => ECM_VERSION ) );
 		}
 	}

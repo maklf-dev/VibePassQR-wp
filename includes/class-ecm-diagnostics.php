@@ -166,6 +166,11 @@ final class ECM_Diagnostics {
 			'capabilities'     => self::capability_snapshot(),
 			'role_capabilities'=> self::role_capability_snapshot(),
 			'event_migration'  => ECM_Events::migration_health(),
+			'workflow'         => array(
+				'schema_version' => (string) get_option( 'ecm_workflow_schema_version', '' ),
+				'feature_enabled' => ECM_Workflow::enabled(),
+				'public_registration_mode' => 'classic', // Phase 2: no public workflow routes are registered.
+			),
 			'activity_report'  => ECM_Activity::status(),
 			'system_snapshot'  => ECM_Activity::system_snapshot(),
 			'log'              => array(),
