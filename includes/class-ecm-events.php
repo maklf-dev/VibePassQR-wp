@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
 final class ECM_Events {
 	private const MIGRATION_HOOK = 'ecm_migrate_participants';
 	private const CONFIG_KEYS = array(
-		'form_intro', 'currency_label', 'amount', 'rial_rate', 'currency_decimals',
+		'registration_process', 'form_intro', 'currency_label', 'amount', 'rial_rate', 'currency_decimals',
 		'payment_mode', 'payment_required', 'payment_button', 'price_label',
 		'recovery_link_text', 'recovery_title', 'recovery_intro', 'recovery_button',
 		'recovery_not_found', 'success_text', 'card_ready_title', 'home_link_text',
@@ -650,6 +650,7 @@ final class ECM_Events {
 		?>
 		<div class="ecm-event-config">
 			<details class="ecm-subpanel ecm-event-config-section" open><summary><strong>فرم ثبت‌نام و پرداخت</strong><span>فیلدها، بازیابی، حالت رایگان و مبالغ</span></summary>
+				<label class="ecm-setting"><span>نوع فرایند ثبت‌نام (در آلفا فقط برای آزمایش مدیر)</span><select name="event_settings[registration_process]"><option value="classic" <?php selected( $config['registration_process'] ?? 'classic', 'classic' ); ?>>کلاسیک (پیش‌فرض)</option><option value="custom_workflow" <?php selected( $config['registration_process'] ?? '', 'custom_workflow' ); ?>>اختصاصی چهارمرحله‌ای (فقط پیش‌نمایش مدیریت)</option></select><small>انتخاب فرایند اختصاصی، فعلاً صفحه عمومی ثبت‌نام را تغییر نمی‌دهد.</small></label>
 				<div class="ecm-panel__title"><div><h3>فیلدهای همین رویداد</h3><p>این فرم فقط روی همین رویداد اثر دارد. نوع «مهمان» دو ورودی نام و موبایل تکرارشونده می‌سازد.</p></div><button type="button" class="button button-primary" data-add-field>افزودن فیلد</button></div>
 				<div class="ecm-builder" data-field-list><?php foreach ( $fields as $index => $field ) { ECM_Admin::field_row( (int) $index, (array) $field ); } ?></div>
 				<div class="ecm-admin-grid ecm-admin-grid--2">
@@ -851,6 +852,7 @@ final class ECM_Events {
 		if ( ! preg_match( '/^\d{1,12}(?:\.\d{1,6})?$/', $config['amount'] ) || ! preg_match( '/^\d{1,12}(?:\.\d{1,6})?$/', $config['rial_rate'] ) || (float) $config['rial_rate'] <= 0 || strlen( ECM_Utils::rial_amount( $config['amount'], $config['rial_rate'] ) ) > 18 ) {
 			wp_die( 'مبلغ یا نرخ معتبر نیست: حداکثر ۱۲ رقم صحیح و ۶ رقم اعشار مجاز است و نرخ باید بزرگ‌تر از صفر باشد.' );
 		}
+		$config['registration_process'] = 'custom_workflow' === ( $raw['registration_process'] ?? ( $old['registration_process'] ?? 'classic' ) ) ? 'custom_workflow' : 'classic';
 		$config['payment_mode']     = 'offline';
 		$config['payment_required'] = empty( $raw['payment_required'] ) ? 0 : 1;
 			$config['prevent_duplicate_phone'] = empty( $raw['prevent_duplicate_phone'] ) ? 0 : 1;

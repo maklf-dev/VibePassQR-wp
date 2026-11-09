@@ -32,18 +32,26 @@ final class ECM_Workflow_Instances {
 		if ( is_wp_error( $digest ) ) {
 			return $digest;
 		}
-		// Only simple, explicitly validated scalar fields are accepted in phase 2.
-		// The production field-schema and guest validator belong to phase 3.
+		// Only validated scalar values are accepted; repeatable guest rows are sanitized
+		// and encoded by the admin-only preview form before reaching this API.
 		if ( count( $validated_fields ) > 50 ) {
 			return new WP_Error( 'ecm_flow_data_too_large', 'تعداد فیلدها بیش از حد مجاز است.' );
 		}
 		$data = array();
 		foreach ( $validated_fields as $key => $value ) {
-			if ( ! is_string( $key ) || ! preg_match( '/^[a-z][a-z0-9_]{0,79}$/D', $key )
+			if ( ! is_string( $key ) || ( '__guests' !== $key && ! preg_match( '/^[a-z][a-z0-9_]{0,79}$/D', $key ) )
 				|| ! is_scalar( $value ) ) {
 				return new WP_Error( 'ecm_flow_invalid_data', 'داده فرم در این مرحله معتبر نیست.' );
 			}
-			$data[ $key ] = substr( sanitize_textarea_field( (string) $value ), 0, 2048 );
+			if ( '__guests' === $key ) {
+				$decoded_guests = json_decode( (string) $value, true );
+				if ( ! is_array( $decoded_guests ) || count( $decoded_guests ) > 20 ) {
+					return new WP_Error( 'ecm_flow_invalid_guests', 'اطلاعات مهمان‌ها معتبر نیست.' );
+				}
+				$data[ $key ] = substr( (string) $value, 0, 16000 );
+			} else {
+				$data[ $key ] = substr( sanitize_textarea_field( (string) $value ), 0, 2048 );
+			}
 		}
 		$encoded = wp_json_encode( $data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
 		if ( ! $encoded || strlen( $encoded ) > 32768 ) {
@@ -136,4 +144,117 @@ final class ECM_Workflow_Instances {
 			}
 		}
 	}
+	/** Locked, audited acceptance of the exact immutable agreement version. */
+	public static function accept_agreement( int $instance_id, int $revision ): bool|WP_Error {
+		if ( ! self::preview_allowed() ) {
+			return new WP_Error( 'ecm_flow_forbidden', 'این عملیات تنها در پیش‌نمایش مدیریت مجاز است.' );
+		}
+		global $wpdb;
+		$instances = ECM_DB::table( 'flow_instances' );
+		$audit = ECM_DB::table( 'events' );
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+			return new WP_Error( 'ecm_flow_transaction', 'امکان آغاز تراکنش وجود ندارد.' );
+		}
+		$committed = false;
+		try {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$instances} WHERE id=%d FOR UPDATE", $instance_id ) );
+			if ( ! $row || (int) $row->lock_version !== $revision || 'awaiting_agreement' !== $row->state ) {
+				return new WP_Error( 'ecm_flow_stale_state', 'وضعیت یا نسخه درخواست تغییر کرده است.' );
+			}
+			$version = $wpdb->get_row( $wpdb->prepare( 'SELECT definition_json FROM ' . ECM_DB::table( 'flow_versions' ) . ' WHERE id=%d AND event_id=%d', (int) $row->flow_version_id, (int) $row->event_id ) );
+			$definition = $version ? json_decode( (string) $version->definition_json, true ) : null;
+			$agreement = $definition['steps'][1] ?? array();
+			$receipt = $definition['steps'][2] ?? array();
+			if ( ( $agreement['key'] ?? '' ) !== $row->current_step_key || ( $agreement['type'] ?? '' ) !== 'agreement' || ( $receipt['type'] ?? '' ) !== 'receipt' ) {
+				return new WP_Error( 'ecm_flow_invalid_step', 'تعریف مراحل با وضعیت درخواست هماهنگ نیست.' );
+			}
+			$hash = hash( 'sha256', wp_json_encode( array( $agreement['html'] ?? '', $agreement['consent_label'] ?? '', (int) $row->flow_version_id ), JSON_UNESCAPED_UNICODE ) );
+			$now = ECM_Utils::now_utc();
+			$updated = $wpdb->query( $wpdb->prepare( "UPDATE {$instances} SET state='awaiting_receipt',current_step_key=%s,lock_version=lock_version+1,updated_at=%s WHERE id=%d AND lock_version=%d AND state='awaiting_agreement'", $receipt['key'], $now, $instance_id, $revision ) );
+			if ( 1 !== $updated ) {
+				return new WP_Error( 'ecm_flow_concurrency', 'درخواست هم‌زمان دیگری دریافت شده است.' );
+			}
+			if ( ! $wpdb->insert( $audit, array( 'registration_id'=>0,'domain_event_id'=>(int) $row->event_id,'flow_instance_id'=>$instance_id,'actor_user_id'=>get_current_user_id(),'correlation_id'=>'flow:' . $row->public_id,'event_type'=>'workflow_agreement_accepted','meta'=>wp_json_encode( array( 'from'=>'awaiting_agreement','to'=>'awaiting_receipt','agreement_hash'=>$hash,'flow_version_id'=>(int) $row->flow_version_id,'revision'=>$revision+1 ) ),'created_at'=>$now ) ) ) {
+				return new WP_Error( 'ecm_flow_audit_failed', 'ثبت سابقه پذیرش سند موفق نبود.' );
+			}
+			if ( false === $wpdb->query( 'COMMIT' ) ) {
+				return new WP_Error( 'ecm_flow_commit', 'تثبیت تراکنش ناموفق بود.' );
+			}
+			$committed = true;
+			return true;
+		} finally {
+			if ( ! $committed ) {
+				$wpdb->query( 'ROLLBACK' );
+			}
+		}
+	}
+
+	/** One private receipt + review queue state; no registration/card/SMS issuance. */
+	public static function submit_receipt( int $instance_id, int $revision, array $file ): bool|WP_Error {
+		if ( ! self::preview_allowed() ) {
+			return new WP_Error( 'ecm_flow_forbidden', 'این عملیات تنها در پیش‌نمایش مدیریت مجاز است.' );
+		}
+		$validated = ECM_Workflow_Receipts::validate_upload( $file );
+		if ( is_wp_error( $validated ) ) {
+			return $validated;
+		}
+		$root = ECM_Workflow_Receipts::private_root();
+		if ( is_wp_error( $root ) ) {
+			return $root;
+		}
+		global $wpdb;
+		$instances = ECM_DB::table( 'flow_instances' );
+		$files = ECM_DB::table( 'flow_files' );
+		$audit = ECM_DB::table( 'events' );
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+			return new WP_Error( 'ecm_flow_transaction', 'امکان آغاز تراکنش وجود ندارد.' );
+		}
+		$committed = false;
+		$moved = null;
+		try {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$instances} WHERE id=%d FOR UPDATE", $instance_id ) );
+			if ( ! $row || (int) $row->lock_version !== $revision || 'awaiting_receipt' !== $row->state ) {
+				return new WP_Error( 'ecm_flow_stale_state', 'درخواست در وضعیت بارگذاری رسید نیست.' );
+			}
+			$version = $wpdb->get_row( $wpdb->prepare( 'SELECT definition_json FROM ' . ECM_DB::table( 'flow_versions' ) . ' WHERE id=%d AND event_id=%d', (int) $row->flow_version_id, (int) $row->event_id ) );
+			$definition = $version ? json_decode( (string) $version->definition_json, true ) : null;
+			if ( ( $definition['steps'][2]['key'] ?? '' ) !== $row->current_step_key || ( $definition['steps'][2]['type'] ?? '' ) !== 'receipt' || ( $definition['steps'][3]['type'] ?? '' ) !== 'result' ) {
+				return new WP_Error( 'ecm_flow_invalid_step', 'فرایند رسید معتبر نیست.' );
+			}
+			$moved = ECM_Workflow_Receipts::move_private( $validated );
+			if ( is_wp_error( $moved ) ) {
+				return $moved;
+			}
+			$now = ECM_Utils::now_utc();
+			$prev = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COALESCE(MAX(version_no),0) FROM {$files} WHERE instance_id=%d", $instance_id ) );
+			if ( ! $wpdb->insert( $files, array( 'instance_id'=>$instance_id, 'file_reference'=>$moved['reference'], 'mime_type'=>$validated['mime'], 'sha256'=>$validated['sha256'], 'size_bytes'=>$validated['size'], 'version_no'=>$prev+1, 'status'=>'pending', 'uploaded_at'=>$now ) ) ) {
+				return new WP_Error( 'ecm_flow_receipt_database', 'ثبت مشخصات رسید در دیتابیس موفق نبود.' );
+			}
+			$updated = $wpdb->query( $wpdb->prepare( "UPDATE {$instances} SET state='under_review',current_step_key=%s,lock_version=lock_version+1,updated_at=%s WHERE id=%d AND lock_version=%d AND state='awaiting_receipt'", $definition['steps'][3]['key'], $now, $instance_id, $revision ) );
+			if ( 1 !== $updated ) {
+				return new WP_Error( 'ecm_flow_concurrency', 'درخواست هم‌زمان دیگری در حال بررسی است.' );
+			}
+			if ( ! $wpdb->insert( $audit, array( 'registration_id'=>0,'domain_event_id'=>(int) $row->event_id,'flow_instance_id'=>$instance_id,'actor_user_id'=>get_current_user_id(),'correlation_id'=>'flow:' . $row->public_id,'event_type'=>'workflow_receipt_uploaded','meta'=>wp_json_encode( array( 'from'=>'awaiting_receipt','to'=>'under_review','mime'=>$validated['mime'],'size_bytes'=>$validated['size'],'sha256'=>$validated['sha256'],'revision'=>$revision+1 ) ),'created_at'=>$now ) ) ) {
+				return new WP_Error( 'ecm_flow_audit_failed', 'ثبت سابقه بارگذاری رسید ممکن نشد.' );
+			}
+			if ( false === $wpdb->query( 'COMMIT' ) ) {
+				return new WP_Error( 'ecm_flow_commit', 'تثبیت تراکنش موفق نبود.' );
+			}
+			$committed = true;
+			return true;
+		} finally {
+			if ( ! $committed ) {
+				$wpdb->query( 'ROLLBACK' );
+				if ( is_array( $moved ) && ! empty( $moved['path'] ) && is_file( $moved['path'] ) ) {
+					@unlink( $moved['path'] );
+				}
+			}
+		}
+	}
+
+	private static function preview_allowed(): bool {
+		return ECM_Workflow::enabled() && current_user_can( 'manage_ecm_events' );
+	}
+
 }
+

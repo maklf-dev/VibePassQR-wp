@@ -172,7 +172,7 @@ final class ECM_Public {
 		return $this->shell( (string) ob_get_clean(), 'ecm-registration', (string) $event->title );
 	}
 
-	private function render_field( array $field, string $value = '', ?object $event = null ): string {
+	public function render_field( array $field, string $value = '', ?object $event = null ): string {
 		$key         = sanitize_key( $field['key'] ?? '' );
 		$type        = sanitize_key( $field['type'] ?? 'text' );
 		$label       = (string) ( $field['label'] ?? $key );

@@ -297,3 +297,10 @@
 ## 0.1.0
 
 Initial registration, card, recovery, attendance and reporting plugin.
+
+## 0.7.0-alpha.2 (Workflow phase 3 — Staging only)
+- Admin-only step editor with versioned safe HTML/scoped CSS and four-step preview.
+- Admin test progression: form -> immutable agreement acceptance -> private receipt -> under review.
+- Additive audit metadata; no registration, ticket, QR, attendance or SMS bridge activated.
+- Workflow remains off by default; public registration stays classic even on custom workflow events.
+- See `docs/RELEASE-NOTES-0.7.0-alpha.2-FA.md` and QA report.

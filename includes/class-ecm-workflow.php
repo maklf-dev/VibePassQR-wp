@@ -68,11 +68,33 @@ final class ECM_Workflow {
 				return new WP_Error( 'ecm_flow_invalid_step', 'شناسه یا نوع مرحله تکراری یا نامعتبر است.' );
 			}
 			$keys[ $key ] = true;
-			$clean[] = array(
-				'key'   => $key,
-				'type'  => $type,
+			$html = ECM_Workflow_Templates::sanitize_html( (string) ( $step['html'] ?? '' ) );
+			$css = ECM_Workflow_Templates::sanitize_css( (string) ( $step['css'] ?? '' ) );
+			if ( is_wp_error( $html ) ) {
+				return $html;
+			}
+			if ( is_wp_error( $css ) ) {
+				return $css;
+			}
+			$clean_step = array(
+				'key' => $key,
+				'type' => $type,
 				'label' => substr( sanitize_text_field( (string) ( $step['label'] ?? $key ) ), 0, 190 ),
+				'html' => $html,
+				'css' => $css,
 			);
+			if ( 'agreement' === $type ) {
+				$clean_step['consent_label'] = substr( sanitize_text_field( (string) ( $step['consent_label'] ?? 'متن را مطالعه کردم و موافقم.' ) ), 0, 300 );
+			}
+			if ( 'receipt' === $type ) {
+				$clean_step['card_number'] = preg_replace( '/[^0-9]/', '', (string) ( $step['card_number'] ?? '' ) );
+				$clean_step['account_holder'] = substr( sanitize_text_field( (string) ( $step['account_holder'] ?? '' ) ), 0, 190 );
+				$clean_step['payment_note'] = substr( sanitize_textarea_field( (string) ( $step['payment_note'] ?? '' ) ), 0, 1000 );
+				if ( $clean_step['card_number'] && 16 !== strlen( $clean_step['card_number'] ) ) {
+					return new WP_Error( 'ecm_flow_card_number', 'شماره کارت باید ۱۶ رقم باشد.' );
+				}
+			}
+			$clean[] = $clean_step;
 		}
 		if ( 'form' !== $clean[0]['type'] || 'result' !== $clean[ count( $clean ) - 1 ]['type'] ) {
 			return new WP_Error( 'ecm_flow_order', 'فرایند باید با فرم آغاز و با نتیجه پایان یابد.' );
@@ -81,7 +103,10 @@ final class ECM_Workflow {
 			|| count( array_filter( $clean, static fn( array $step ): bool => 'receipt' === $step['type'] ) ) > 1 ) {
 			return new WP_Error( 'ecm_flow_duplicate_control', 'در این نسخه هر کنترل پذیرش یا رسید تنها یک مرتبه مجاز است.' );
 		}
-		return array( 'schema' => 1, 'steps' => $clean );
+		if ( count( $clean ) === 4 && array_column( $clean, 'type' ) !== array( 'form', 'agreement', 'receipt', 'result' ) ) {
+			return new WP_Error( 'ecm_flow_preview_order', 'ترتیب پیش‌فرض چهارمرحله‌ای باید فرم، میثاق‌نامه، رسید، نتیجه باشد.' );
+		}
+		return array( 'schema' => 2, 'steps' => $clean );
 	}
 
 	/** A reusable default flow, not auto-published or activated. */

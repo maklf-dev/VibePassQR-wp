@@ -111,3 +111,7 @@
 - [یادداشت انتشار پایدار 0.3.0](docs/RELEASE-NOTES-0.3.0-FA.md)
 
 مجوز: GPL-2.0-or-later. مجوز کتابخانه‌های QR و PDF در `THIRD-PARTY-NOTICES.md` قرار دارد.
+
+### 0.7.0-alpha.2 experimental Workflow preview
+
+For staging environments only. Administrators can edit versioned workflow steps and test form, agreement and private receipt submission. The Workflow flag is disabled by default, and **the public registration endpoint remains classic**. Set `ECM_PRIVATE_RECEIPT_DIR` to a writable directory *outside the webroot* before testing uploads. Review `docs/RELEASE-NOTES-0.7.0-alpha.2-FA.md` for the exact boundaries and manual QA procedure.
