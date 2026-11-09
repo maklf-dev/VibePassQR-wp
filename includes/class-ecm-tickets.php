@@ -197,17 +197,21 @@ final class ECM_Tickets {
 		nocache_headers();
 		$participant = self::resolve_token( $card_token ?: $att_token, $card_token ? 'card' : 'attendance' );
 		if ( ! $participant ) {
+			ECM_Activity::mark_access_denied( 'short_token_invalid_or_revoked' );
 			status_header( 404 );
 			wp_die( 'این لینک کارت معتبر نیست یا دسترسی آن لغو شده است.', 'لینک نامعتبر', array( 'response' => 404 ) );
 		}
 		$registration = ECM_DB::registration( (int) $participant->registration_id );
 		$event        = $registration ? ECM_Events::registration_event( $registration ) : null;
 		if ( ! $registration || ! ECM_Events::is_publicly_active( $event ) ) {
+			$reason = ! $registration ? 'registration_missing' : ( ! $event ? 'event_missing' : ( empty( $event->enabled ) ? 'event_disabled' : 'event_not_published' ) );
+			ECM_Activity::mark_access_denied( $reason, $event ? (int) $event->id : 0, $registration ? (int) $registration->id : 0 );
 			status_header( 403 );
 			wp_die( $event ? esc_html( $event->disabled_message ) : 'رویداد در دسترس نیست.', 'دسترسی بسته است', array( 'response' => 403 ) );
 		}
 		if ( $card_token ) {
 			if ( ! ECM_Participants::grant_recovered_card( $participant ) ) {
+				ECM_Activity::mark_access_denied( 'card_grant_failed', $event ? (int) $event->id : 0, (int) $registration->id );
 				wp_die( 'ایجاد دسترسی امن کارت انجام نشد.', 'خطای کارت', array( 'response' => 500 ) );
 			}
 			$args = array( 'id' => (int) $registration->id );

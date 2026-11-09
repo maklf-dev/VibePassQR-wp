@@ -565,6 +565,17 @@ final class ECM_SMS {
 		self::finish( $row, $status, sanitize_key( (string) ( $result['error_code'] ?? 'transport_rejected' ) ), absint( $result['http_code'] ?? 0 ), sanitize_text_field( (string) ( $result['provider_id'] ?? '' ) ), (string) ( $result['summary'] ?? $result['message'] ?? '' ), $attempt_id, absint( $result['latency_ms'] ?? 0 ), $transport_key );
 	}
 
+	/** Configurable minute offsets (after attempt 1, 2, 3, etc.), bounded for WP-Cron. */
+	public static function retry_delay_seconds( int $completed_attempts ): int {
+		$raw = (string) ( ECM_Utils::settings()['sms_retry_delays'] ?? '5,10,15' );
+		$minutes = array_values( array_filter( array_map( 'absint', explode( ',', $raw ) ), static fn( int $x ): bool => $x >= 1 && $x <= 180 ) );
+		if ( ! $minutes ) {
+			$minutes = array( 5, 10, 15 );
+		}
+		$index = max( 0, min( count( $minutes ) - 1, $completed_attempts - 1 ) );
+		return $minutes[ $index ] * MINUTE_IN_SECONDS;
+	}
+
 	private static function retry_status( int $attempts ): string {
 		$maximum = min( 10, max( 1, absint( ECM_Utils::settings()['sms_max_attempts'] ?? 3 ) ) );
 		return $attempts < $maximum ? 'retry_wait' : 'failed';
@@ -590,7 +601,7 @@ final class ECM_SMS {
 		global $wpdb;
 		$next = null;
 		if ( 'retry_wait' === $status ) {
-			$delay = min( 1800, 60 * ( 2 ** max( 0, (int) $row->attempts - 1 ) ) );
+			$delay = self::retry_delay_seconds( (int) $row->attempts );
 			$next  = gmdate( 'Y-m-d H:i:s', time() + $delay );
 			wp_schedule_single_event( time() + $delay, 'ecm_sms_job', array( (int) $row->id ) );
 		}
@@ -973,6 +984,8 @@ final class ECM_SMS {
 		$settings['sms_transport_paused'] = empty( $raw['paused'] ) ? 0 : 1;
 		$settings['sms_worker_batch'] = min( 100, max( 1, absint( $raw['worker_batch'] ?? 25 ) ) );
 		$settings['sms_max_attempts'] = min( 10, max( 1, absint( $raw['max_attempts'] ?? 3 ) ) );
+		$delays = array_slice( array_map( 'absint', preg_split( '/[,،\s]+/u', (string) ( $raw['retry_delays'] ?? '5,10,15' ), -1, PREG_SPLIT_NO_EMPTY ) ), 0, 9 );
+		$settings['sms_retry_delays'] = $delays && count( array_filter( $delays, static fn( int $m ): bool => $m >= 1 && $m <= 180 ) ) === count( $delays ) ? implode( ',', $delays ) : '5,10,15';
 		$profiles = array();
 		foreach ( (array) ( $raw['profiles'] ?? array() ) as $profile_id => $profile_raw ) {
 			$profile_id = sanitize_key( (string) $profile_id );
@@ -1482,7 +1495,7 @@ final class ECM_SMS {
 							<label class="ecm-setting"><span>API Key جدید</span><input type="password" name="api_key" value="" autocomplete="new-password" <?php disabled( defined( 'ECM_IPPANEL_API_KEY' ) ); ?>><small><?php echo defined( 'ECM_IPPANEL_API_KEY' ) ? 'کلید امن از wp-config.php خوانده می‌شود.' : 'فقط برای اتصال مستقیم Edge؛ خالی یعنی کلید قبلی حفظ شود.'; ?></small></label>
 							<label class="ecm-setting"><span>مسیر شبکه Edge</span><select name="sms[ip_mode]"><option value="auto" <?php selected( $settings['sms_ip_mode'] ?? 'auto', 'auto' ); ?>>خودکار</option><option value="ipv4" <?php selected( $settings['sms_ip_mode'] ?? 'auto', 'ipv4' ); ?>>اجبار IPv4</option></select><small>فقط درخواست‌های مستقیم IPPanel را تحت تأثیر قرار می‌دهد.</small></label>
 							<label class="ecm-setting"><span>تعداد پردازش در هر Worker</span><input type="number" min="1" max="100" name="sms[worker_batch]" value="<?php echo esc_attr( absint( $settings['sms_worker_batch'] ?? 25 ) ); ?>"><small>برای بار بالا مقدار ۲۵ تا ۵۰ مناسب است؛ محدودیت سرویس‌دهنده را در نظر بگیرید.</small></label>
-							<label class="ecm-setting"><span>حداکثر تلاش خودکار</span><input type="number" min="1" max="10" name="sms[max_attempts]" value="<?php echo esc_attr( absint( $settings['sms_max_attempts'] ?? 3 ) ); ?>"><small>خطاهای موقت با فاصله زمانی دوباره تلاش می‌شوند.</small></label>
+							<label class="ecm-setting"><span>حداکثر تلاش خودکار (شامل ارسال اول)</span><input type="number" min="1" max="10" name="sms[max_attempts]" value="<?php echo esc_attr( absint( $settings['sms_max_attempts'] ?? 3 ) ); ?>"><small>برای ۳ بار تلاش مجدد، مقدار ۴ تنظیم شود.</small></label><label class="ecm-setting"><span>فاصله تلاش‌های مجدد (دقیقه)</span><input type="text" dir="ltr" name="sms[retry_delays]" value="<?php echo esc_attr( (string) ( $settings['sms_retry_delays'] ?? '5,10,15' ) ); ?>" placeholder="5,10,15"><small>فواصل پس از تلاش اول، دوم و سوم. حد مجاز هر فاصله ۱ تا ۱۸۰ دقیقه است.</small></label>
 						</div>
 						<div class="ecm-sms-safety"><label class="ecm-switch"><input type="checkbox" name="sms[paused]" value="1" <?php checked( ! empty( $settings['sms_transport_paused'] ) ); ?>><span>ارسال خودکار موقتاً متوقف باشد</span></label><label><input type="checkbox" name="sms[release_paused]" value="1"> پس از فعال‌سازی، رکوردهای متوقف‌شده قبلی نیز آزاد شوند</label><?php if ( ! defined( 'ECM_IPPANEL_API_KEY' ) ) : ?><label><input type="checkbox" name="remove_key" value="1"> کلید ذخیره‌شده Edge حذف شود</label><?php endif; ?></div>
 					</section>

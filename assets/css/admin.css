@@ -456,3 +456,6 @@
 .ecm-registration-is-test{background:#fff9e8!important}
 .ecm-badge--test{color:#8a5a00!important;background:#fff0b8!important;border-color:#e8c35c!important}
 @media(max-width:782px){.ecm-registration-bulk__bar{align-items:stretch;flex-direction:column}.ecm-registration-bulk__bar>label:first-child{min-width:0}.ecm-registration-bulk__bar .button{width:100%}.ecm-report-table tbody td.ecm-report-select{display:flex!important;width:100%!important;align-items:center;justify-content:space-between}.ecm-report-table tbody td.ecm-report-select:before{content:'انتخاب ثبت‌نام'}}
+
+/* 0.6.7 shared event scope: narrow, responsive, no global selector overrides. */
+.ecm-report-scope{margin:12px 0 18px}.ecm-report-scope details{border:1px solid var(--ecm-line,#d6dce5);border-radius:12px;padding:10px 14px}.ecm-report-scope summary{cursor:pointer;font-weight:600}.ecm-report-scope__choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:12px 0}.ecm-report-scope__choices label{display:flex;gap:7px;align-items:center;font-weight:400}.ecm-report-scope__choices input{margin:0}.ecm-report-scope button{margin:8px 0 0}@media(max-width:600px){.ecm-report-scope__choices{grid-template-columns:1fr}}

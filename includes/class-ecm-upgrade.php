@@ -11,7 +11,7 @@ final class ECM_Upgrade {
    'card_width'=>390,'qr_size'=>245,'font_family'=>'inherit','shadow_mode'=>'none','motion_enabled'=>1,
    'custom_css'=>'','custom_css_registration'=>'','custom_css_recovery'=>'','custom_css_card'=>'','custom_css_attendance'=>'','custom_css_portal'=>'','custom_css_operator'=>'','custom_css_reports'=>'','custom_css_admin'=>'',
    'name_field'=>'full_name','card_instruction'=>'این کد را هنگام ورود ارائه کنید.', 'registration_title'=>'','registration_button'=>'دریافت کارت','attendance_button'=>'ثبت حضور','attendance_instruction'=>'برای ثبت حضور دکمه را بزنید.',
-   'sms_field'=>'mobile','sms_sender'=>'','sms_enabled'=>0,'sms_delivery'=>'background','sms_transport'=>'edge','sms_ip_mode'=>'auto','sms_transport_paused'=>1,'sms_worker_batch'=>25,'sms_max_attempts'=>3,'sms_registration'=>0,'sms_attendance'=>0,'sms_recovery'=>0,'sms_repeat'=>0,'sms_outside'=>0,'sms_early'=>0,'sms_late'=>0,
+   'sms_field'=>'mobile','sms_sender'=>'','sms_enabled'=>0,'sms_delivery'=>'background','sms_transport'=>'edge','sms_ip_mode'=>'auto','sms_transport_paused'=>1,'sms_worker_batch'=>25,'sms_max_attempts'=>4,'sms_retry_delays'=>'5,10,15','sms_registration'=>0,'sms_attendance'=>0,'sms_recovery'=>0,'sms_repeat'=>0,'sms_outside'=>0,'sms_early'=>0,'sms_late'=>0,
    'sms_registration_text'=>"ثبت‌نام شما در {event_name} موفق بود.\nکد پیگیری: {tracking_code}\nکارت: {card_link}",
    'sms_attendance_text'=>"{name}، حضور شما در {session_name} در {time} ثبت شد.",
    'sms_recovery_text'=>'لینک بازیابی کارت: {card_link} — کد: {tracking_code}',
@@ -164,7 +164,8 @@ final class ECM_Upgrade {
   if(!array_key_exists('sms_delivery',$stored))$stored['sms_delivery']='background';
 	if(!array_key_exists('sms_transport',$stored))$stored['sms_transport']='edge';
 	if(!array_key_exists('sms_worker_batch',$stored))$stored['sms_worker_batch']=25;
-	if(!array_key_exists('sms_max_attempts',$stored))$stored['sms_max_attempts']=3;
+	if(!array_key_exists('sms_max_attempts',$stored))$stored['sms_max_attempts']=4;
+	if(!array_key_exists('sms_retry_delays',$stored))$stored['sms_retry_delays']='5,10,15';
   if(!array_key_exists('sms_ip_mode',$stored))$stored['sms_ip_mode']='auto';
   if(!array_key_exists('sms_transport_paused',$stored))$stored['sms_transport_paused']=1;
 	if(!isset($stored['sms_pattern_profiles'])||!is_array($stored['sms_pattern_profiles']))$stored['sms_pattern_profiles']=array();

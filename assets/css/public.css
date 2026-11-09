@@ -291,3 +291,8 @@
   .ecm-report-table th, .ecm-report-table td { border-color: #ddd; white-space: normal; }
   @page { size: A4; margin: 12mm; }
 }
+
+/* 0.6.7 reports selector inside the ECM portal */
+.ecm-report-scope{margin:12px 0 18px}.ecm-report-scope details{border:1px solid #cdd8e2;border-radius:12px;padding:10px 14px}.ecm-report-scope summary{cursor:pointer}.ecm-report-scope__choices{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.ecm-report-scope__choices label{display:flex;gap:6px;align-items:center}
+
+.ecm-event-directory{max-width:1040px;margin:24px auto;padding:20px;direction:rtl}.ecm-event-directory__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.ecm-event-directory__item{border:1px solid #cdd8e2;border-radius:14px;padding:20px;display:flex;flex-direction:column;align-items:flex-start;gap:12px}.ecm-event-directory__item h2{font-size:1.15em;margin:0}.ecm-event-directory__item .ecm-button{margin-top:auto}

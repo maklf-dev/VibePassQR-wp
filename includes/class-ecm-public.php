@@ -7,6 +7,7 @@ final class ECM_Public {
 		add_shortcode( 'ecm_registration', array( $this, 'registration_shortcode' ) );
 		add_shortcode( 'ecm_recovery', array( $this, 'recovery_shortcode' ) );
 		add_shortcode( 'ecm_card', array( $this, 'card_shortcode' ) );
+		add_shortcode( 'ecm_event_list', array( $this, 'event_list_shortcode' ) );
 		add_shortcode( 'ecm_attendance', array( $this, 'attendance_shortcode' ) );
 		add_shortcode( 'ecm_manager', array( $this, 'manager_shortcode' ) );
 
@@ -84,7 +85,7 @@ final class ECM_Public {
 		$has_content = false;
 		global $post;
 		if ( $post instanceof WP_Post ) {
-			foreach ( array( 'ecm_registration', 'ecm_recovery', 'ecm_card', 'ecm_attendance', 'ecm_manager', 'ecm_portal' ) as $shortcode ) {
+			foreach ( array( 'ecm_registration', 'ecm_recovery', 'ecm_card', 'ecm_attendance', 'ecm_manager', 'ecm_portal', 'ecm_event_list' ) as $shortcode ) {
 				if ( has_shortcode( $post->post_content, $shortcode ) ) {
 					$has_content = true;
 					break;
@@ -109,6 +110,22 @@ final class ECM_Public {
 		$notice_event = $event_slug ? ECM_Events::event_by_slug( $event_slug ) : ECM_Events::event( ECM_Events::default_event_id() );
 		$fallback_title = $notice_event ? (string) $notice_event->title : (string) ECM_Utils::settings()['event_name'];
 		return '<section class="ecm-shell ' . esc_attr( $class ) . '" dir="rtl"><div class="ecm-phone-bar"><span></span><strong>' . esc_html( $title ?: $fallback_title ) . '</strong><span></span></div>' . $content . '</section>';
+	}
+
+	/** Optional public directory; draft/archived events are never exposed. */
+	public function event_list_shortcode(): string {
+		$this->assets();
+		$events = array_filter( ECM_Events::all(), static fn( $event ): bool => 'published' === (string) $event->status );
+		ob_start();
+		?>
+		<section class="ecm-event-directory" dir="rtl"><h1>فهرست رویدادها</h1>
+		<?php if ( ! $events ) : ?><p>در حال حاضر رویداد منتشرشده‌ای وجود ندارد.</p><?php endif; ?>
+		<div class="ecm-event-directory__grid"><?php foreach ( $events as $event ) : $active = ECM_Events::is_publicly_active( $event ); ?>
+		<article class="ecm-event-directory__item"><h2><?php echo esc_html( $event->title ); ?></h2><span class="ecm-badge"><?php echo esc_html( $active ? 'فعال' : 'غیرفعال' ); ?></span>
+		<?php if ( $active ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام در رویداد</a><?php else : ?><p><?php echo esc_html( (string) $event->disabled_message ); ?></p><?php endif; ?></article>
+		<?php endforeach; ?></div></section>
+		<?php
+		return (string) ob_get_clean();
 	}
 
 	public function registration_shortcode(): string {

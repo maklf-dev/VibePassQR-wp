@@ -235,6 +235,7 @@ final class ECM_Admin {
 		$columns = array(
 			'public_id'        => 'کد کارت',
 			'event_title'      => 'رویداد',
+			'guest_relationship' => 'معرف / مهمان‌ها',
 			'created_at'       => 'زمان ثبت‌نام',
 			'amount_original'  => 'مبلغ اصلی',
 			'amount_rial'      => 'مبلغ ریالی',
@@ -276,9 +277,12 @@ final class ECM_Admin {
 
 	private static function finance_hidden(): bool {
 		$filters = self::report_filters();
-		if ( ! empty( $filters['event'] ) ) {
-			$event = ECM_Events::event( (int) $filters['event'] );
-			return $event ? empty( ECM_Events::config( $event )['payment_required'] ) : true;
+		if ( ! empty( $filters['events'] ) ) {
+			foreach ( $filters['events'] as $event_id ) {
+				$event = ECM_Events::event( (int) $event_id );
+				if ( $event && ! empty( ECM_Events::config( $event )['payment_required'] ) ) return false;
+			}
+			return true;
 		}
 		foreach ( ECM_Events::all() as $event ) {
 			if ( ! empty( ECM_Events::config( $event )['payment_required'] ) ) {
@@ -297,9 +301,11 @@ final class ECM_Admin {
         if ( isset( $_GET['cols'] ) && isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])),'ecm_columns') ) {
 			update_user_meta( $user_id, 'ecm_report_columns', $selected );
 		}
-		$per_page = 100;
-		$paged    = max( 1, isset( $_GET['ecm_paged'] ) ? absint( $_GET['ecm_paged'] ) : 1 );
+		$page_options = array( 25, 50, 100, 250 );
+		$per_page = isset( $_GET['ecm_per_page'] ) && in_array( absint( $_GET['ecm_per_page'] ), $page_options, true ) ? absint( $_GET['ecm_per_page'] ) : 100;
 		$stats    = self::report_stats( $filters );
+		$last_page = max( 1, (int) ceil( (int) $stats->total / $per_page ) );
+		$paged    = min( $last_page, max( 1, absint( $_GET['ecm_paged'] ?? 1 ) ) );
 		$rows     = self::report_rows( $per_page, ( $paged - 1 ) * $per_page, $filters );
 		self::prime_report_cache( $rows, $filters );
 		$events = self::events_for_rows( $rows );
@@ -310,19 +316,19 @@ final class ECM_Admin {
 		$finance_hidden = self::finance_hidden();
 		$can_manage_registrations = $admin && ECM_Registration_Admin::is_site_administrator();
 		$base_url = $admin ? admin_url( 'admin.php?page=ecm-reports' ) : get_permalink();
-		$filter_query = array_filter( array( 'ecm_view' => 'registrations', 'ecm_portal_view' => ( ! $admin && isset( $_GET['ecm_portal_view'] ) ) ? 'reports' : '', 'ecm_event' => $filters['event'], 'ecm_session' => $filters['session'], 'ecm_payment' => $filters['payment'], 'ecm_test' => $filters['test'], 'ecm_from' => $filters['from'], 'ecm_to' => $filters['to'], 'ecm_search' => $filters['search'] ) );
+		$filter_query = array_filter( array( 'ecm_view' => 'registrations', 'ecm_portal_view' => ( ! $admin && isset( $_GET['ecm_portal_view'] ) ) ? 'reports' : '', 'ecm_events' => ECM_Report_Scope::query_args()['ecm_events'], 'ecm_per_page' => $per_page, 'ecm_session' => $filters['session'], 'ecm_payment' => $filters['payment'], 'ecm_test' => $filters['test'], 'ecm_from' => $filters['from'], 'ecm_to' => $filters['to'], 'ecm_search' => $filters['search'] ) );
 		$export_url = add_query_arg( $filter_query, admin_url( 'admin-post.php?action=ecm_export_csv' ) );
         $document_url=wp_nonce_url(str_replace('action=ecm_export_csv','action=ecm_report_document',$export_url),'ecm_report_document');
 		$pagination_url = add_query_arg( array_merge( $filter_query, array( 'ecm_paged' => 999999999 ) ), $base_url );
-		$pagination_base = str_replace( '999999999', '%#%', esc_url( $pagination_url ) );
+		$pagination_base = str_replace( '999999999', '%#%', $pagination_url ); // paginate_links escapes its own generated anchors.
 		ob_start();
 		?>
 		<div class="ecm-report">
 			<?php if ( $can_manage_registrations && isset( $_GET['ecm_bulk_result'] ) ) : $bulk_result = sanitize_key( wp_unslash( $_GET['ecm_bulk_result'] ) ); $bulk_count = absint( $_GET['ecm_bulk_count'] ?? 0 ); $bulk_messages = array( 'mark_test' => number_format_i18n( $bulk_count ) . ' ثبت‌نام به‌عنوان تستی علامت‌گذاری شد.', 'unmark_test' => number_format_i18n( $bulk_count ) . ' ثبت‌نام به حالت عادی بازگشت.', 'delete' => number_format_i18n( $bulk_count ) . ' ثبت‌نام و اطلاعات وابسته آن حذف شد.', 'confirm_required' => 'برای حذف، تأیید حذف دائمی را فعال کنید.', 'invalid' => 'عملیات یا ثبت‌نام انتخاب‌شده معتبر نیست.' ); ?><div class="notice <?php echo esc_attr( in_array( $bulk_result, array( 'mark_test', 'unmark_test', 'delete' ), true ) ? 'notice-success' : 'notice-error' ); ?>"><p><?php echo esc_html( $bulk_messages[ $bulk_result ] ?? 'نتیجه عملیات نامشخص است.' ); ?></p></div><?php endif; ?>
 			<div class="ecm-report__header"><div><span class="ecm-kicker">LIVE REPORT</span><h1>فهرست جامع ثبت‌نام‌ها</h1><p>زمان‌ها بر اساس <?php echo esc_html( wp_timezone_string() ); ?> نمایش داده می‌شوند.</p></div><div class="ecm-report__actions"><?php if ( ! $admin && current_user_can( 'record_ecm_attendance' ) ) : ?><a class="button" href="<?php echo esc_url( ECM_Portal::url( array( 'ecm_portal_view' => 'checkin' ) ) ); ?>">پنل ثبت حضور</a><?php endif; ?><a class="button" href="<?php echo esc_url( wp_nonce_url( $export_url, 'ecm_export_csv' ) ); ?>">خروجی Excel/CSV</a><a class="button button-primary" target="_blank" rel="noopener" href="<?php echo esc_url($document_url); ?>">چاپ / PDF گزارش</a><?php if ( ! $admin ) : ?><a class="button" href="<?php echo esc_url( ECM_Portal::url() ); ?>">خانه پنل</a><?php endif; ?></div></div>
-			<form class="ecm-report-filter ecm-no-print<?php echo $finance_hidden ? ' ecm-report-filter--no-finance' : ''; ?>" method="get" action="<?php echo esc_url( $base_url ); ?>"><?php if ( $admin ) : ?><input type="hidden" name="page" value="ecm-reports"><?php endif; ?><label>جست‌وجو<input type="search" name="ecm_search" value="<?php echo esc_attr( $filters['search'] ); ?>" placeholder="نام، کد کارت یا مرجع"></label><label>رویداد<select name="ecm_event"><option value="0">همه رویدادها</option><?php foreach ( $event_options as $event_option ) : ?><option value="<?php echo esc_attr( $event_option->id ); ?>" <?php selected( $filters['event'], (int) $event_option->id ); ?>><?php echo esc_html( $event_option->title ); ?></option><?php endforeach; ?></select></label><label>نوبت حضور<select name="ecm_session"><option value="0">همه نوبت‌ها</option><?php foreach ( $session_options as $session_option ) : ?><option value="<?php echo esc_attr( $session_option->id ); ?>" <?php selected( $filters['session'], (int) $session_option->id ); ?>><?php echo esc_html( ( $session_option->event_title ?: 'رویداد' ) . ' — ' . $session_option->title ); ?></option><?php endforeach; ?></select></label><?php if ( ! $finance_hidden ) : ?><label>وضعیت<select name="ecm_payment"><option value="">همه</option><option value="paid" <?php selected( $filters['payment'], 'paid' ); ?>>پرداخت موفق</option><option value="offline_confirmed" <?php selected( $filters['payment'], 'offline_confirmed' ); ?>>ثبت بدون درگاه</option><option value="pending" <?php selected( $filters['payment'], 'pending' ); ?>>در انتظار</option><option value="not_required" <?php selected( $filters['payment'], 'not_required' ); ?>>رایگان</option></select></label><?php endif; ?><?php if ( $can_manage_registrations ) : ?><label>ثبت‌نام تستی<select name="ecm_test"><option value="live" <?php selected( $filters['test'], 'live' ); ?>>فقط ثبت‌نام‌های اصلی</option><option value="test" <?php selected( $filters['test'], 'test' ); ?>>فقط تستی‌ها</option><option value="all" <?php selected( $filters['test'], 'all' ); ?>>همه</option></select></label><?php endif; ?><label>از تاریخ<input type="date" name="ecm_from" value="<?php echo esc_attr( $filters['from'] ); ?>"></label><label>تا تاریخ<input type="date" name="ecm_to" value="<?php echo esc_attr( $filters['to'] ); ?>"></label><button class="button button-primary">اعمال فیلتر</button></form>
+			<form class="ecm-report-filter ecm-no-print<?php echo $finance_hidden ? ' ecm-report-filter--no-finance' : ''; ?>" method="get" action="<?php echo esc_url( $base_url ); ?>"><?php if ( $admin ) : ?><input type="hidden" name="page" value="ecm-reports"><?php elseif ( isset( $_GET['ecm_portal_view'] ) ) : ?><input type="hidden" name="ecm_portal_view" value="reports"><?php endif; ?><input type="hidden" name="ecm_view" value="registrations"><?php echo ECM_Report_Scope::hidden_fields(); ?><label>تعداد هر صفحه<select name="ecm_per_page"><?php foreach ( $page_options as $count ) : ?><option value="<?php echo esc_attr( $count ); ?>" <?php selected( $per_page, $count ); ?>><?php echo esc_html( $count ); ?></option><?php endforeach; ?></select></label><label>جست‌وجو<input type="search" name="ecm_search" value="<?php echo esc_attr( $filters['search'] ); ?>" placeholder="نام، کد کارت یا مرجع"></label><p class="ecm-filter-hint">رویدادها از انتخابگر مشترک بالای گزارش تعیین می‌شوند.</p><label>نوبت حضور<select name="ecm_session"><option value="0">همه نوبت‌ها</option><?php foreach ( $session_options as $session_option ) : ?><option value="<?php echo esc_attr( $session_option->id ); ?>" <?php selected( $filters['session'], (int) $session_option->id ); ?>><?php echo esc_html( ( $session_option->event_title ?: 'رویداد' ) . ' — ' . $session_option->title ); ?></option><?php endforeach; ?></select></label><?php if ( ! $finance_hidden ) : ?><label>وضعیت<select name="ecm_payment"><option value="">همه</option><option value="paid" <?php selected( $filters['payment'], 'paid' ); ?>>پرداخت موفق</option><option value="offline_confirmed" <?php selected( $filters['payment'], 'offline_confirmed' ); ?>>ثبت بدون درگاه</option><option value="pending" <?php selected( $filters['payment'], 'pending' ); ?>>در انتظار</option><option value="not_required" <?php selected( $filters['payment'], 'not_required' ); ?>>رایگان</option></select></label><?php endif; ?><?php if ( $can_manage_registrations ) : ?><label>ثبت‌نام تستی<select name="ecm_test"><option value="live" <?php selected( $filters['test'], 'live' ); ?>>فقط ثبت‌نام‌های اصلی</option><option value="test" <?php selected( $filters['test'], 'test' ); ?>>فقط تستی‌ها</option><option value="all" <?php selected( $filters['test'], 'all' ); ?>>همه</option></select></label><?php endif; ?><label>از تاریخ<input type="date" name="ecm_from" value="<?php echo esc_attr( $filters['from'] ); ?>"></label><label>تا تاریخ<input type="date" name="ecm_to" value="<?php echo esc_attr( $filters['to'] ); ?>"></label><button class="button button-primary">اعمال فیلتر</button></form>
 			<div class="ecm-stats"><div><span>ثبت‌نام‌ها</span><strong><?php echo esc_html( number_format_i18n( (int) $stats->total ) ); ?></strong></div><?php if ( ! $finance_hidden ) : ?><div><span>پرداخت موفق</span><strong><?php echo esc_html( number_format_i18n( (int) $stats->paid ) ); ?></strong></div><div><span>جمع ریالی</span><strong><?php echo esc_html( number_format_i18n( (int) $stats->total_paid ) ); ?></strong></div><?php endif; ?><div><span>حضورهای ثبت‌شده</span><strong><?php echo esc_html( number_format_i18n( (int) $stats->attendance_total ) ); ?></strong></div></div>
-			<details class="ecm-column-picker"><summary>انتخاب ستون‌های جدول</summary><form method="get" action="<?php echo esc_url( $base_url ); ?>"><?php if ( $admin ) : ?><input type="hidden" name="page" value="ecm-reports"><?php endif; ?><?php foreach ( array( 'ecm_event' => 'event', 'ecm_session' => 'session', 'ecm_payment' => 'payment', 'ecm_test' => 'test', 'ecm_from' => 'from', 'ecm_to' => 'to', 'ecm_search' => 'search' ) as $query_key => $filter_key ) : ?><input type="hidden" name="<?php echo esc_attr( $query_key ); ?>" value="<?php echo esc_attr( $filters[ $filter_key ] ); ?>"><?php endforeach; ?><?php wp_nonce_field('ecm_columns'); ?><input type="hidden" name="cols[]" value=""><div class="ecm-column-actions"><button type="button" class="button" data-columns="all">انتخاب همه</button><button type="button" class="button" data-columns="none">غیرفعال کردن همه</button></div><div class="ecm-check-grid"><?php foreach ( $all_columns as $key => $label ) : ?><label><input type="checkbox" name="cols[]" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>> <?php echo esc_html( $label ); ?></label><?php endforeach; ?></div><button class="button button-primary">اعمال ستون‌ها</button></form></details>
+			<details class="ecm-column-picker"><summary>انتخاب ستون‌های جدول</summary><form method="get" action="<?php echo esc_url( $base_url ); ?>"><?php if ( $admin ) : ?><input type="hidden" name="page" value="ecm-reports"><?php endif; ?><input type="hidden" name="ecm_view" value="registrations"><input type="hidden" name="ecm_per_page" value="<?php echo esc_attr( $per_page ); ?>"><?php echo ECM_Report_Scope::hidden_fields(); ?><?php foreach ( array( 'ecm_session' => 'session', 'ecm_payment' => 'payment', 'ecm_test' => 'test', 'ecm_from' => 'from', 'ecm_to' => 'to', 'ecm_search' => 'search' ) as $query_key => $filter_key ) : ?><input type="hidden" name="<?php echo esc_attr( $query_key ); ?>" value="<?php echo esc_attr( $filters[ $filter_key ] ); ?>"><?php endforeach; ?><?php wp_nonce_field('ecm_columns'); ?><input type="hidden" name="cols[]" value=""><div class="ecm-column-actions"><button type="button" class="button" data-columns="all">انتخاب همه</button><button type="button" class="button" data-columns="none">غیرفعال کردن همه</button></div><div class="ecm-check-grid"><?php foreach ( $all_columns as $key => $label ) : ?><label><input type="checkbox" name="cols[]" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>> <?php echo esc_html( $label ); ?></label><?php endforeach; ?></div><button class="button button-primary">اعمال ستون‌ها</button></form></details>
 			<?php if ( $can_manage_registrations ) : ?><form class="ecm-registration-bulk ecm-no-print" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return this.bulk_operation.value!=='delete'||window.confirm('ثبت‌نام‌های انتخابی و تمام کارت‌ها، حضورها و پیامک‌های وابسته برای همیشه حذف شوند؟');"><input type="hidden" name="action" value="ecm_registration_bulk"><input type="hidden" name="return_url" value="<?php echo esc_attr( add_query_arg( $filter_query, $base_url ) ); ?>"><?php wp_nonce_field( 'ecm_registration_bulk', 'ecm_registration_bulk_nonce' ); ?><div class="ecm-registration-bulk__bar"><label>عملیات روی موارد انتخابی<select name="bulk_operation" required><option value="">— انتخاب عملیات —</option><option value="mark_test">علامت‌گذاری به‌عنوان ثبت‌نام تستی</option><option value="unmark_test">بازگردانی به ثبت‌نام عادی</option><option value="delete">حذف دائمی ثبت‌نام و اطلاعات وابسته</option></select></label><label class="ecm-registration-bulk__confirm"><input type="checkbox" name="confirm_delete" value="1"> تأیید حذف دائمی؛ فقط برای عملیات حذف</label><button class="button button-primary">اجرا</button></div><?php endif; ?>
 			<div class="ecm-table-scroll"><table class="widefat striped ecm-report-table"><thead><tr><?php if ( $can_manage_registrations ) : ?><th class="ecm-report-select"><input type="checkbox" data-ecm-select-all aria-label="انتخاب همه"></th><?php endif; ?><?php foreach ( $selected as $column ) : ?><th><?php echo esc_html( $all_columns[ $column ] ); ?></th><?php endforeach; ?><th class="ecm-no-print">جزئیات</th></tr></thead><tbody>
 			<?php if ( ! $rows ) : ?><tr class="ecm-report-empty"><td colspan="<?php echo esc_attr( count( $selected ) + 1 + ( $can_manage_registrations ? 1 : 0 ) ); ?>">هنوز ثبت‌نامی وجود ندارد.</td></tr><?php endif; ?>
@@ -372,7 +378,8 @@ final class ECM_Admin {
 			$test_visibility = 'live';
 		}
 		return array(
-			'event'   => isset( $_GET['ecm_event'] ) ? absint( $_GET['ecm_event'] ) : 0,
+			'event'   => count( ECM_Report_Scope::event_ids() ) === 1 ? ECM_Report_Scope::event_ids()[0] : 0,
+			'events'  => ECM_Report_Scope::event_ids(),
 			'session' => isset( $_GET['ecm_session'] ) ? absint( $_GET['ecm_session'] ) : 0,
 			'payment' => in_array( $payment, array( 'paid', 'offline_confirmed', 'pending', 'not_required' ), true ) ? $payment : '',
 			'test'    => $test_visibility,
@@ -386,8 +393,8 @@ final class ECM_Admin {
 		global $wpdb;
 		$where = array( '1=1' );
 		$args  = array();
-		if ( ! empty( $filters['event'] ) ) { $where[] = 'r.event_id = %d'; $args[] = absint( $filters['event'] ); }
-		if ( ! empty( $filters['session'] ) && empty( $filters['event'] ) ) { $session = ECM_DB::table( 'sessions' ); $where[] = "r.event_id = (SELECT event_id FROM {$session} WHERE id=%d LIMIT 1)"; $args[] = absint( $filters['session'] ); }
+		if ( ! empty( $filters['events'] ) ) { $where[] = 'r.event_id IN (' . implode( ',', array_map( 'absint', $filters['events'] ) ) . ')'; }
+		if ( ! empty( $filters['session'] ) ) { $session = ECM_DB::table( 'sessions' ); $where[] = "r.event_id = (SELECT event_id FROM {$session} WHERE id=%d LIMIT 1)"; $args[] = absint( $filters['session'] ); }
 		if ( ! empty( $filters['payment'] ) ) { $where[] = 'r.payment_status = %s'; $args[] = $filters['payment']; }
 		$test_visibility = ECM_Registration_Admin::is_site_administrator() ? ( $filters['test'] ?? 'live' ) : 'live';
 		if ( 'test' === $test_visibility ) $where[] = 'r.is_test = 1';
@@ -414,7 +421,7 @@ final class ECM_Admin {
 	 * per table row with a fixed number of queries per page/export batch.
 	 */
 	public static function prime_report_cache( array $rows, array $filters = array() ): void {
-		self::$report_cache = array( 'primed' => true, 'sms' => array(), 'attendance' => array(), 'users' => array() );
+		self::$report_cache = array( 'primed' => true, 'sms' => array(), 'attendance' => array(), 'users' => array(), 'relationships' => array() );
 		$registration_ids = array_values( array_unique( array_filter( array_map( 'absint', wp_list_pluck( $rows, 'id' ) ) ) ) );
 		if ( ! $registration_ids ) {
 			return;
@@ -444,6 +451,16 @@ final class ECM_Admin {
 			}
 		}
 
+		// One bounded query for the entire page; never one query per registration.
+		if ( in_array( 'guest_relationship', self::selected_columns(), true ) ) {
+			$participants = ECM_DB::table( 'participants' );
+			$people = ECM_DB::table( 'people' );
+			$ids_sql = implode( ',', $registration_ids );
+			$links = $wpdb->get_results( "SELECT p.registration_id,p.id,p.invited_by_participant_id,p.participant_type,COALESCE(NULLIF(p.display_name,''),pe.full_name) full_name FROM {$participants} p LEFT JOIN {$people} pe ON pe.id=p.person_id WHERE p.registration_id IN ({$ids_sql}) AND p.status='active' ORDER BY p.registration_id,p.guest_order,p.id" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			foreach ( $links as $link ) {
+				self::$report_cache['relationships'][ (int) $link->registration_id ][] = $link;
+			}
+		}
 		$user_ids = array_values( array_unique( array_filter( $user_ids ) ) );
 		if ( $user_ids ) {
 			foreach ( get_users( array( 'include' => $user_ids, 'fields' => array( 'ID', 'display_name' ) ) ) as $user ) {
@@ -462,6 +479,26 @@ final class ECM_Admin {
 		}
 		switch ( $column ) {
 			case 'is_test': return ! empty( $row->is_test ) ? '<span class="ecm-badge ecm-badge--test">ثبت‌نام تستی</span>' : '<span class="ecm-badge">ثبت‌نام اصلی</span>';
+			case 'guest_relationship':
+				$people = self::$report_cache['relationships'][ (int) $row->id ] ?? array();
+				if ( ! $people ) return '—';
+				$names = array();
+				$hosts = array();
+				$guests_by_host = array();
+				foreach ( $people as $person ) {
+					if ( 'primary' === $person->participant_type ) {
+						$hosts[ (int) $person->id ] = (string) ( $person->full_name ?: 'بدون نام' );
+					} else {
+						$guests_by_host[ (int) $person->invited_by_participant_id ][] = (string) ( $person->full_name ?: 'بدون نام' );
+					}
+				}
+				foreach ( $people as $person ) {
+					$is_guest = 'guest' === (string) $person->participant_type;
+					$label = $is_guest ? 'مهمان' : 'معرف';
+					$related = $is_guest ? 'معرف: ' . ( $hosts[ (int) $person->invited_by_participant_id ] ?? 'نامشخص' ) : 'مهمان‌ها: ' . implode( '، ', $guests_by_host[ (int) $person->id ] ?? array() );
+					$names[] = '<span class="ecm-badge">' . esc_html( $label ) . '</span> ' . esc_html( $person->full_name ?: 'بدون نام' ) . ( $related && 'مهمان‌ها: ' !== $related ? ' <small>' . esc_html( $related ) . '</small>' : '' );
+				}
+				return implode( '<br>', $names );
 			case 'event_title': return esc_html( (string) ( $row->event_title ?: 'رویداد قدیمی' ) );
 			case 'sms_report':
 				$logs = self::$report_cache['sms'][ (int) $row->id ] ?? array();
@@ -541,7 +578,7 @@ final class ECM_Admin {
 	}
     public static function selected_columns(): array {
         $id=get_current_user_id();
-        $cols=metadata_exists('user',$id,'ecm_report_columns')?(array)get_user_meta($id,'ecm_report_columns',true):array_merge(array('field:full_name'),ECM_Utils::settings()['report_columns']);
+        $cols=metadata_exists('user',$id,'ecm_report_columns')?(array)get_user_meta($id,'ecm_report_columns',true):array_merge(array('field:full_name','guest_relationship'),ECM_Utils::settings()['report_columns']);
         return array_values(array_intersect($cols,array_keys(self::report_columns())));
     }
 }

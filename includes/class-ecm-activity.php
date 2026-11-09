@@ -30,6 +30,7 @@ final class ECM_Activity {
 	private static array $pending_records = array();
 	private static bool $flush_registered = false;
 	private static ?string $request_id = null;
+	private static string $request_error_code = '';
 
 	public static function hooks(): void {
 		add_action( 'template_redirect', array( __CLASS__, 'track_frontend' ), -9 );
@@ -148,10 +149,29 @@ final class ECM_Activity {
 					'db_queries'        => function_exists( 'get_num_queries' ) ? (int) get_num_queries() : 0,
 					'http_status'       => $status,
 					'is_error'          => $status >= 400 || (bool) $fatal,
+					'error_code'        => self::$request_error_code,
 				),
 				$fatal
 			)
 		);
+	}
+
+	/** Mark the ECM reason for an HTTP denial in the same request sample. */
+	public static function mark_access_denied( string $reason, int $event_id = 0, int $registration_id = 0 ): void {
+		self::$request_error_code = sanitize_key( $reason );
+		self::record( 'operation', array(
+			'operation' => 'card_access_rejected',
+			'route' => self::$pending_page ? (string) self::$pending_page['route'] : self::current_route(),
+			'is_error' => true,
+			'error_code' => self::$request_error_code,
+			'event_id' => $event_id,
+			'registration_id' => $registration_id,
+		) );
+		ECM_Diagnostics::record( 'ticket', 'Card access rejected', array(
+			'error_code' => self::$request_error_code,
+			'event_id' => $event_id,
+			'registration_id' => $registration_id,
+		) );
 	}
 
 	public static function request_id(): string {
