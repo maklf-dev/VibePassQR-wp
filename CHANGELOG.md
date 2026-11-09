@@ -1,3 +1,12 @@
+## 0.7.0-alpha.3 (Workflow phase 4 — staging review and protected issuance)
+
+- Adds an admin review queue with state filters, reasoned reject/correction and secure image preview.
+- Adds a staging-only, guarded, atomic approval bridge to canonical registration, guest and QR tokens.
+- Adds a disabled-by-default tracking shortcode requiring both tracking secret and matching phone.
+- Keeps opted-in staging Custom events from bypassing review via the Classic public form.
+- Pins form-schema hashes at draft creation; existing Classic data/URLs remain unchanged.
+- See `docs/RELEASE-NOTES-0.7.0-alpha.3-FA.md` and QA report for staging flags and limitations.
+
 ## 0.7.0-alpha.1 — 2026-11-09
 
 - Additive workflow schema (versions, instances, files) and audit relationship.

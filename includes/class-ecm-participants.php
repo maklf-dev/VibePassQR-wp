@@ -10,7 +10,7 @@ final class ECM_Participants {
 	 * @param array<int,array{name:string,phone:string}> $guests
 	 * @return array<int,object>|WP_Error
 	 */
-	public static function create_guests( int $registration_id, array $guests ): array|WP_Error {
+	public static function create_guests( int $registration_id, array $guests, bool $within_transaction = false ): array|WP_Error {
 		$registration = ECM_DB::registration( $registration_id );
 		$primary      = ECM_DB::primary_participant( $registration_id );
 		if ( ! $registration || ! $primary ) {
@@ -30,12 +30,14 @@ final class ECM_Participants {
 		$participants = ECM_DB::table( 'participants' );
 		$registrations= ECM_DB::table( 'registrations' );
 		$created      = array();
-		$wpdb->query( 'START TRANSACTION' );
+		if ( ! $within_transaction && false === $wpdb->query( 'START TRANSACTION' ) ) {
+			return new WP_Error( 'guest_transaction', 'امکان آغاز تراکنش مهمان‌ها نیست.' );
+		}
 		foreach ( $guests as $index => $guest ) {
 			$name  = sanitize_text_field( (string) ( $guest['name'] ?? '' ) );
 			$phone = ECM_Utils::normalize_mobile( (string) ( $guest['phone'] ?? '' ) );
 			if ( ! $name || ! $phone ) {
-				$wpdb->query( 'ROLLBACK' );
+				if ( ! $within_transaction ) { $wpdb->query( 'ROLLBACK' ); }
 				return new WP_Error( 'invalid_guest', 'نام و شماره موبایل معتبر برای همه مهمان‌ها الزامی است.' );
 			}
 			$phone_hash = hash_hmac( 'sha256', $phone, wp_salt( 'auth' ) );
@@ -49,7 +51,7 @@ final class ECM_Participants {
 				) ) {
 					$person = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$people} WHERE phone_hash=%s LIMIT 1 FOR UPDATE", $phone_hash ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 					if ( ! $person ) {
-						$wpdb->query( 'ROLLBACK' );
+						if ( ! $within_transaction ) { $wpdb->query( 'ROLLBACK' ); }
 						return new WP_Error( 'guest_person_database', 'ذخیره هویت مهمان انجام نشد.' );
 					}
 				} else {
@@ -62,7 +64,7 @@ final class ECM_Participants {
 				$test_exempt = $wpdb->get_var( $wpdb->prepare( "SELECT p.id FROM {$participants} p INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE p.event_id=%d AND p.person_id=%d AND p.status='active' AND r.is_test=1 LIMIT 1", (int) $registration->event_id, (int) $person->id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$already = $test_exempt ? null : $wpdb->get_var( $wpdb->prepare( "SELECT p.id FROM {$participants} p INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE p.event_id=%d AND p.person_id=%d AND p.status='active' AND r.is_test=0 AND (p.registration_id=%d OR r.payment_status IN ('paid','not_required','offline_confirmed','pending')) LIMIT 1", (int) $registration->event_id, (int) $person->id, $registration_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				if ( $already ) {
-					$wpdb->query( 'ROLLBACK' );
+					if ( ! $within_transaction ) { $wpdb->query( 'ROLLBACK' ); }
 					return new WP_Error( 'duplicate_guest', (string) ( $settings['duplicate_guest_phone_message'] ?? 'این شماره موبایل قبلاً برای یکی از مهمانان همین رویداد ثبت شده است.' ) );
 				}
 			}
@@ -85,12 +87,12 @@ final class ECM_Participants {
 				array( '%s', '%d', '%d', '%d', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s' )
 			);
 			if ( ! $inserted ) {
-				$wpdb->query( 'ROLLBACK' );
+				if ( ! $within_transaction ) { $wpdb->query( 'ROLLBACK' ); }
 				return new WP_Error( 'guest_participant_database', 'ساخت کارت مهمان انجام نشد.' );
 			}
 			$created[] = ECM_DB::participant( (int) $wpdb->insert_id );
 		}
-		if ( false === $wpdb->query( 'COMMIT' ) ) {
+		if ( ! $within_transaction && false === $wpdb->query( 'COMMIT' ) ) {
 			return new WP_Error( 'guest_commit', 'تأیید نهایی اطلاعات مهمان‌ها انجام نشد.' );
 		}
 		return array_values( array_filter( $created ) );

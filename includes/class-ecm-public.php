@@ -122,7 +122,7 @@ final class ECM_Public {
 		<?php if ( ! $events ) : ?><p>در حال حاضر رویداد منتشرشده‌ای وجود ندارد.</p><?php endif; ?>
 		<div class="ecm-event-directory__grid"><?php foreach ( $events as $event ) : $active = ECM_Events::is_publicly_active( $event ); ?>
 		<article class="ecm-event-directory__item"><h2><?php echo esc_html( $event->title ); ?></h2><span class="ecm-badge"><?php echo esc_html( $active ? 'فعال' : 'غیرفعال' ); ?></span>
-		<?php if ( $active ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام در رویداد</a><?php else : ?><p><?php echo esc_html( (string) $event->disabled_message ); ?></p><?php endif; ?></article>
+		<?php if ( $active && 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) : ?><p>ثبت‌نام اختصاصی این رویداد هنوز برای عموم فعال نشده است.</p><?php elseif ( $active ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام در رویداد</a><?php else : ?><p><?php echo esc_html( (string) $event->disabled_message ); ?></p><?php endif; ?></article>
 		<?php endforeach; ?></div></section>
 		<?php
 		return (string) ob_get_clean();
@@ -136,6 +136,11 @@ final class ECM_Public {
 		}
 		if ( ! ECM_Events::is_publicly_active( $event ) ) {
 			return $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
+		}
+		// Fail closed on explicitly opted-in staging events: Classic would
+		// otherwise issue a card immediately and bypass manual review.
+		if ( 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) {
+			return $this->attendance_state( 'warning', 'این رویداد در حال آماده‌سازی فرایند ثبت‌نام اختصاصی است و ثبت‌نام عمومی آن هنوز فعال نشده است.', 'ثبت‌نام موقتاً غیرفعال است' );
 		}
 		$settings = ECM_Events::config( $event );
 		$notice   = $this->notice_from_query();
@@ -243,6 +248,11 @@ final class ECM_Public {
 			exit;
 		}
 
+		if ( 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) {
+			self::record_registration_rejection( (int) $event->id, 'workflow_not_public' );
+			wp_safe_redirect( add_query_arg( 'ecm_error', 'event', $redirect ) );
+			exit;
+		}
 		$settings = ECM_Events::config( $event );
 		$raw      = isset( $_POST['ecm_field'] ) && is_array( $_POST['ecm_field'] ) ? wp_unslash( $_POST['ecm_field'] ) : array();
 		$raw_guests = isset( $_POST['ecm_guest'] ) && is_array( $_POST['ecm_guest'] ) ? wp_unslash( $_POST['ecm_guest'] ) : array();

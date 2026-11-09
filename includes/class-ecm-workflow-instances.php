@@ -53,6 +53,10 @@ final class ECM_Workflow_Instances {
 				$data[ $key ] = substr( sanitize_textarea_field( (string) $value ), 0, 2048 );
 			}
 		}
+		// Pin the current form schema. A later field-builder edit must not
+		// silently discard or reinterpret submitted data on approval.
+		$config = ECM_Events::config( $event );
+		$data['__schema_hash'] = hash( 'sha256', wp_json_encode( (array) ( $config['fields'] ?? array() ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) );
 		$encoded = wp_json_encode( $data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
 		if ( ! $encoded || strlen( $encoded ) > 32768 ) {
 			return new WP_Error( 'ecm_flow_data_too_large', 'حجم داده ثبت‌نام بیش از حد مجاز است.' );

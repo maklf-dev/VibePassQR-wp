@@ -81,7 +81,8 @@ final class ECM_Workflow_Staging {
 		<div class="wrap ecm-flow-admin" dir="rtl">
 			<h1>سازنده فرایند ثبت‌نام | نسخه آزمایشی 0.7.0</h1>
 			<div class="notice notice-warning inline"><p><strong>فقط برای Staging:</strong> فعال‌کردن این قابلیت، مسیر عمومی ثبت‌نام را تغییر نمی‌دهد. همه مراحل و فایل‌های آزمایشی فقط برای مدیران مجاز هستند. هنوز کارت و پیامک صادر نمی‌شود.</p></div>
-			<?php if ( isset( $_GET['saved'] ) ) : ?><div class="notice notice-success"><p>نسخه فرایند ثبت شد.</p></div><?php endif; ?>
+			<?php echo '<p><a class="button" href="' . esc_url( admin_url( 'admin.php?page=ecm-flow-review' ) ) . '">بررسی درخواست‌های آزمایشی</a></p>';
+			if ( isset( $_GET['saved'] ) ) : ?><div class="notice notice-success"><p>نسخه فرایند ثبت شد.</p></div><?php endif; ?>
 			<?php if ( isset( $_GET['flow_error'] ) ) : ?><div class="notice notice-error"><p><?php echo esc_html( sanitize_text_field( wp_unslash( $_GET['flow_error'] ) ) ); ?></p></div><?php endif; ?>
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="ecm-flow-inline">
 				<input type="hidden" name="page" value="ecm-workflows"><label>رویداد: <select name="event_id"><?php foreach ( $events as $item ) : ?><option value="<?php echo esc_attr( $item->id ); ?>" <?php selected( $event_id, (int) $item->id ); ?>><?php echo esc_html( $item->title ); ?></option><?php endforeach; ?></select></label><button class="button">انتخاب</button>
@@ -196,7 +197,7 @@ final class ECM_Workflow_Staging {
 		}
 		$steps = $flow['definition']['steps'];
 		$state = $instance ? (string) $instance->state : 'draft';
-		$index = 'draft' === $state ? 0 : ( 'awaiting_agreement' === $state ? 1 : ( 'awaiting_receipt' === $state ? 2 : 3 ) );
+		$index = 'draft' === $state ? 0 : ( 'awaiting_agreement' === $state ? 1 : ( in_array( $state, array( 'awaiting_receipt', 'needs_correction' ), true ) ? 2 : 3 ) );
 		$step = $steps[$index];
 		$tracking = $instance ? (string) get_transient( 'ecm_flow_preview_code_' . get_current_user_id() . '_' . $instance_id ) : '';
 		$components = array(
@@ -204,11 +205,11 @@ final class ECM_Workflow_Staging {
 			'ecm_agreement' => '<label class="ecm-flow-consent"><input type="checkbox" name="ecm_agreed" value="1" required> ' . esc_html( $step['consent_label'] ?? 'میثاق‌نامه را مطالعه کردم و موافقم.' ) . '</label>',
 			'ecm_payment_details' => '<div class="ecm-flow-payment">شماره کارت: <bdi>' . esc_html( $step['card_number'] ?? 'تنظیم نشده' ) . '</bdi><p>' . esc_html( $step['account_holder'] ?? '' ) . '</p><p>' . nl2br( esc_html( $step['payment_note'] ?? '' ) ) . '</p></div>',
 			'ecm_receipt_upload' => '<label>تصویر رسید (JPEG / PNG / WebP، حداکثر ۸ مگابایت)<input type="file" name="ecm_receipt" accept="image/jpeg,image/png,image/webp" capture="environment" required></label>',
-			'ecm_status' => '<strong>در انتظار بررسی مدیر (حالت آزمایشی)</strong>',
+			'ecm_status' => '<strong>' . esc_html( ECM_Workflow_Review::state_label( $state ) ) . '</strong>',
 			'ecm_tracking_code' => $tracking ? '<strong dir="ltr">' . esc_html( $tracking ) . '</strong>' : '<span>کد فقط هنگام ایجاد درخواست آزمایشی به مدیر نشان داده می‌شود.</span>',
 		);
 		?><div class="ecm-flow-stage"><div class="ecm-flow-steps">مرحله <?php echo esc_html( $index + 1 ); ?> از ۴: <?php echo esc_html( $step['label'] ); ?> | وضعیت: <code><?php echo esc_html( $state ); ?></code></div>
-		<?php if ( 3 !== $index ) : ?>
+		<?php if ( 3 !== $index && 'needs_correction' !== $state ) : ?>
 		<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="ecm_flow_preview_step"><input type="hidden" name="event_id" value="<?php echo esc_attr( $event_id ); ?>"><input type="hidden" name="instance_id" value="<?php echo esc_attr( $instance_id ); ?>"><input type="hidden" name="revision" value="<?php echo esc_attr( $instance ? $instance->lock_version : 0 ); ?>"><?php wp_nonce_field( 'ecm_flow_step_' . $event_id . '_' . $instance_id, 'ecm_nonce' ); ?>
 			<?php echo ECM_Workflow_Templates::render( $step, $components ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
@@ -216,7 +217,7 @@ final class ECM_Workflow_Staging {
 		</form>
 		<?php else : echo ECM_Workflow_Templates::render( $step, $components ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		endif; ?>
-		<p><a href="<?php echo esc_url( self::page_url( $event_id ) ); ?>">شروع درخواست آزمایشی دیگر</a></p></div><?php
+		<p><a href="<?php echo esc_url( self::page_url( $event_id ) ); ?>">شروع درخواست آزمایشی دیگر</a> | <a href="<?php echo esc_url( add_query_arg( array( 'page' => 'ecm-flow-review', 'instance_id' => $instance_id ), admin_url( 'admin.php' ) ) ); ?>">بررسی مدیریتی درخواست</a></p></div><?php
 	}
 
 	/** Only administrator-supplied, schema-validated data enters the preview database. */

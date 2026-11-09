@@ -112,6 +112,18 @@
 
 مجوز: GPL-2.0-or-later. مجوز کتابخانه‌های QR و PDF در `THIRD-PARTY-NOTICES.md` قرار دارد.
 
+### 0.7.0-alpha.3 staging review and issuance bridge
+
+The fourth phase introduces a staging-only review queue, private receipt streaming,
+reasoned rejection/correction, and a transaction-guarded bridge to the canonical
+registration, guest and QR/card services. The optional `[ecm_tracking_lookup]`
+shortcode requires a **random tracking code and matching phone**, not phone alone.
+Workflow-registered public events now fail closed instead of falling through to
+Classic registration. Live card issuance and SMS are **separately disabled by
+default**, and public multi-step entry/OTP are not yet shipped. This is NOT a
+production release. See `docs/RELEASE-NOTES-0.7.0-alpha.3-FA.md` for safe staging
+flags, test plan and limitations.
+
 ### 0.7.0-alpha.2 experimental Workflow preview
 
 For staging environments only. Administrators can edit versioned workflow steps and test form, agreement and private receipt submission. The Workflow flag is disabled by default, and **the public registration endpoint remains classic**. Set `ECM_PRIVATE_RECEIPT_DIR` to a writable directory *outside the webroot* before testing uploads. Review `docs/RELEASE-NOTES-0.7.0-alpha.2-FA.md` for the exact boundaries and manual QA procedure.
