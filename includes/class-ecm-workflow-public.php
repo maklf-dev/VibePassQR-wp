@@ -215,7 +215,9 @@ final class ECM_Workflow_Public {
 		// Both limits must pass. An attacker cannot reset the IP budget by forging ecm_client.
 		$dimensions = array(
 			array( 'browser:' . $client . ':' . $ip, $limit ),
-			array( 'network:' . $ip, max( 1000, $limit * 30 ) ),
+			// The browser cookie is attacker-controlled. Enforce a meaningful
+			// network-wide ceiling even when clients rotate that cookie.
+			array( 'network:' . $ip, max( 60, $limit * 8 ) ),
 		);
 		foreach ( $dimensions as $dimension ) {
 			$key = self::key( 'ecm_flow_limit_', $scope . ':' . $dimension[0] );

@@ -361,13 +361,19 @@ final class ECM_Import {
 	/** Refuse to claim all-or-nothing semantics if any relevant table is nontransactional. */
 	private static function transactional_tables(): bool {
 		global $wpdb;
-		$names = array_map( static fn( string $name ): string => ECM_DB::table( $name ), array( 'registrations', 'people', 'participants', 'registration_meta', 'ticket_tokens' ) );
+		// Entity creation can also update existing attendance records.
+		$names = array_map( static fn( string $name ): string => ECM_DB::table( $name ), array( 'registrations', 'people', 'participants', 'registration_meta', 'ticket_tokens', 'attendance' ) );
 		$holders = implode( ',', array_fill( 0, count( $names ), '%s' ) );
 		$sql = "SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ({$holders})";
 		$found = $wpdb->get_results( $wpdb->prepare( $sql, $names ) );
-		if ( count( (array) $found ) !== count( $names ) ) { return false; }
-		foreach ( $found as $table ) { if ( strtolower( (string) $table->ENGINE ) !== 'innodb' ) { return false; } }
-		return true;
+		if ( ! is_array( $found ) || count( $found ) !== count( $names ) ) { return false; }
+		$remaining = array_fill_keys( $names, true );
+		foreach ( $found as $table ) {
+			$name = (string) ( $table->TABLE_NAME ?? '' );
+			if ( ! isset( $remaining[ $name ] ) || 'innodb' !== strtolower( (string) ( $table->ENGINE ?? '' ) ) ) { return false; }
+			unset( $remaining[ $name ] );
+		}
+		return ! $remaining;
 	}
 
 	private static function insert_batch( object $event, array $rows ): int|WP_Error {

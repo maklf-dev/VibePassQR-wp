@@ -11,6 +11,21 @@ final class ECM_Workflow_Tracking {
 	public static function hooks(): void {
 		add_shortcode( 'ecm_tracking_lookup', array( __CLASS__, 'shortcode' ) );
 		add_shortcode( 'ecm_flow_tracking', array( __CLASS__, 'shortcode' ) );
+		add_action( 'template_redirect', array( __CLASS__, 'prevent_tracking_cache' ), 1 );
+	}
+
+	/** A lookup result contains private state; prevent shared page caches before output. */
+	public static function prevent_tracking_cache(): void {
+		if ( ! self::available() ) { return; }
+		global $post;
+		// A tracking shortcode may live in a page-builder meta field rather than
+		// post_content. A lookup POST must be non-cacheable in either case.
+		$is_lookup_post = isset( $_POST['ecm_flow_lookup_submit'] );
+		$content = $post instanceof WP_Post ? (string) $post->post_content : '';
+		if ( $is_lookup_post || has_shortcode( $content, 'ecm_tracking_lookup' ) || has_shortcode( $content, 'ecm_flow_tracking' ) ) {
+			if ( ! defined( 'DONOTCACHEPAGE' ) ) { define( 'DONOTCACHEPAGE', true ); }
+			nocache_headers();
+		}
 	}
 
 	public static function available(): bool {

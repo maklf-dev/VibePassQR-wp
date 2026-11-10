@@ -18,6 +18,13 @@ final class ECM_Workflow_Issuance {
 		$registrations = ECM_DB::table( 'registrations' );
 		$participants = ECM_DB::table( 'participants' );
 		$people = ECM_DB::table( 'people' );
+		// `ensure_registration_entities()` can also update old attendance rows.
+		// Do not promise an atomic approval when any table touched by the bridge
+		// is MyISAM or missing. This check performs reads only.
+		if ( ! self::transactional_tables_ready() ) {
+			ECM_Diagnostics::record( 'workflow', 'Approval blocked: transactional storage not verified', array( 'instance_id' => $instance_id ) );
+			return new WP_Error( 'ecm_flow_nontransactional_storage', 'تأیید متوقف شد؛ تراکنشی بودن تمام جدول‌های لازم تأیید نشد. با مدیر سرور بررسی کنید.' );
+		}
 		if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
 			return new WP_Error( 'ecm_flow_transaction', 'تراکنش تأیید آغاز نشد.' );
 		}
@@ -204,6 +211,30 @@ final class ECM_Workflow_Issuance {
 			ECM_Diagnostics::record( 'workflow', 'Post-commit notification or audit callback failed', array( 'registration_id' => $registration_id, 'instance_id' => $instance_id, 'error_type' => get_class( $error ) ) );
 		}
 		return $registration_id;
+	}
+
+	/** Verify every table that a final approval may insert or update, including audit and legacy attendance. */
+	private static function transactional_tables_ready(): bool {
+		global $wpdb;
+		$names = array_map( static fn( string $suffix ): string => ECM_DB::table( $suffix ), array(
+			'flow_instances', 'flow_files', 'registrations', 'people', 'participants',
+			'registration_meta', 'ticket_tokens', 'attendance', 'events',
+		) );
+		$holders = implode( ',', array_fill( 0, count( $names ), '%s' ) );
+		$found = $wpdb->get_results( $wpdb->prepare(
+			"SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ({$holders})",
+			$names
+		) );
+		if ( ! is_array( $found ) || count( $found ) !== count( $names ) ) { return false; }
+		$remaining = array_fill_keys( $names, true );
+		foreach ( $found as $table ) {
+			$name = (string) ( $table->TABLE_NAME ?? '' );
+			if ( ! isset( $remaining[ $name ] ) || 'innodb' !== strtolower( (string) ( $table->ENGINE ?? '' ) ) ) {
+				return false;
+			}
+			unset( $remaining[ $name ] );
+		}
+		return ! $remaining;
 	}
 
 	private static function receipt_valid( object $file ): bool {

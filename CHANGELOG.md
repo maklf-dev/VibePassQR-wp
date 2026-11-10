@@ -1,3 +1,12 @@
+## 0.7.0-alpha.7 (Phase 8, hardening and staging test tools)
+
+- Add fail-closed InnoDB preflight for all nine tables touched by Workflow approval, before any transaction or issuance.
+- Include legacy attendance in the bulk import transaction preflight; reject missing/duplicate table metadata.
+- Tighten OTP network-wide throttling, preventing browser-cookie rotation from bypassing practical limits.
+- Set no-cache headers early for independently enabled workflow-tracking shortcodes.
+- Supply Phase 8 QA assertions, read-only WP-CLI staging inventory and optional Windows ZIP checker in a separate QA package.
+- No new schema, no Classic or ticket-token changes. **Staging-only, not production certified.**
+
 ## 0.7.0-alpha.6 (Phase 7, analytics & staged bulk issuance)
 
 - Add a read-only analytics report builder with safe group/metric allowlists, independent aggregate queries, UTC date/hour buckets, multiple event filtering, bar/line/pie SVG rendering, and downloadable SVG/CSV.
