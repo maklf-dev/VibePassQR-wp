@@ -3,9 +3,8 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Phase 2: non-public workflow domain layer. Registration UI, receipt uploads,
- * OTP tracking, approval/issuance, and SMS dispatch are deliberately NOT wired
- * to this layer until their respective security checks exist in later phases.
+ * Versioned workflow domain shared by admin preview and an independently
+ * gated staging-only public journey. Existing Classic events remain untouched.
  */
 final class ECM_Workflow {
 	private const TRANSITIONS = array(

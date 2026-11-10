@@ -21,6 +21,7 @@ final class ECM_Plugin {
 		ECM_Workflow_Staging::hooks();
 		ECM_Workflow_Review::hooks();
 		ECM_Workflow_Tracking::hooks();
+		ECM_Workflow_Public::hooks();
 		ECM_Tickets::hooks();
 		ECM_Operator::hooks();
 		ECM_Reports::hooks();

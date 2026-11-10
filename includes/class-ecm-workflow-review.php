@@ -66,7 +66,7 @@ final class ECM_Workflow_Review {
 		}
 		$id = absint( $_GET['instance_id'] ?? 0 );
 		echo '<div class="wrap ecm-flow-admin" dir="rtl"><h1>بررسی درخواست‌های ثبت‌نام (آلفا)</h1>';
-		echo '<div class="notice notice-warning inline"><p>این محیط برای بازبینی داده‌های آزمایشی است. تا زمان آماده‌شدن احراز هویت و اعلان‌های عمومی، به درخواست‌های کاربران واقعی دسترسی داده نمی‌شود.</p></div>';
+		echo '<div class="notice notice-warning inline"><p>این محیط آزمایشی است؛ ثبت‌نام عمومی تنها با پرچم مستقل Staging فعال می‌شود. برای آزمایش از شماره‌های تست و پایگاه داده جداگانه استفاده کنید.</p></div>';
 		if ( isset( $_GET['notice'] ) ) {
 			echo '<div class="notice notice-info inline"><p>' . esc_html( sanitize_text_field( wp_unslash( $_GET['notice'] ) ) ) . '</p></div>';
 		}
@@ -250,6 +250,10 @@ final class ECM_Workflow_Review {
 			if ( ! $audit ) { return new WP_Error( 'ecm_flow_audit_failed', 'ثبت تاریخچه ممکن نشد.' ); }
 			if ( false === $wpdb->query( 'COMMIT' ) ) { return new WP_Error( 'ecm_flow_commit', 'ثبت نهایی تغییر وضعیت ممکن نشد.' ); }
 			$committed = true;
+			if ( in_array( $target, array( 'needs_correction', 'rejected' ), true ) ) {
+				try { ECM_SMS::queue_workflow( $id, 'workflow_' . $target ); }
+				catch ( Throwable $exception ) { ECM_Diagnostics::record( 'sms', 'Workflow notification callback failed', array( 'instance_id'=>$id, 'state'=>$target ) ); }
+			}
 			return true;
 		} finally {
 			if ( ! $committed ) { $wpdb->query( 'ROLLBACK' ); }

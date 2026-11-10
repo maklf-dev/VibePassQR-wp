@@ -1,3 +1,15 @@
+## 0.7.0-alpha.4 (Phase 5, staging only)
+
+- Added opt-in staging-only public four-step workflow front-end and `[ecm_flow]` shortcode.
+- Added HttpOnly session-bound public draft, agreement, private receipt and tracking journey.
+- Added cross-browser recovery with tracking secret, matching phone and independently enabled SMS OTP.
+- Added optional pre-approval workflow SMS status notifications using existing queue and worker; new states are off by default.
+- Added public workflow cache guard early in WordPress template routing.
+- Added customer correction loop with atomic state revision and audit entry.
+- Updated registration/event directory routing only for explicitly enabled custom workflow events.
+- No destructive schema migration; Classic card, attendance and SMS flows preserved.
+- Added mock QA checks; WordPress/MariaDB/HTTP/provider integration still required.
+
 ## 0.7.0-alpha.3 (Workflow phase 4 — staging review and protected issuance)
 
 - Adds an admin review queue with state filters, reasoned reject/correction and secure image preview.

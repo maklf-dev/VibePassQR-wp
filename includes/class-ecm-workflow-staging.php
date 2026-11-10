@@ -80,7 +80,7 @@ final class ECM_Workflow_Staging {
 		?>
 		<div class="wrap ecm-flow-admin" dir="rtl">
 			<h1>سازنده فرایند ثبت‌نام | نسخه آزمایشی 0.7.0</h1>
-			<div class="notice notice-warning inline"><p><strong>فقط برای Staging:</strong> فعال‌کردن این قابلیت، مسیر عمومی ثبت‌نام را تغییر نمی‌دهد. همه مراحل و فایل‌های آزمایشی فقط برای مدیران مجاز هستند. هنوز کارت و پیامک صادر نمی‌شود.</p></div>
+			<div class="notice notice-warning inline"><p><strong>فقط برای Staging:</strong> فرایند عمومی تنها در محیط آزمایشی با ECM_WORKFLOW_STAGING_PUBLIC=true فعال می‌شود. تأیید مدیر و صدور کارت همچنان پرچم مستقل دارد؛ پیامک OTP نیز نیازمند پرچم جداگانه است.</p></div>
 			<?php echo '<p><a class="button" href="' . esc_url( admin_url( 'admin.php?page=ecm-flow-review' ) ) . '">بررسی درخواست‌های آزمایشی</a></p>';
 			if ( isset( $_GET['saved'] ) ) : ?><div class="notice notice-success"><p>نسخه فرایند ثبت شد.</p></div><?php endif; ?>
 			<?php if ( isset( $_GET['flow_error'] ) ) : ?><div class="notice notice-error"><p><?php echo esc_html( sanitize_text_field( wp_unslash( $_GET['flow_error'] ) ) ); ?></p></div><?php endif; ?>
@@ -90,10 +90,11 @@ final class ECM_Workflow_Staging {
 			<?php if ( current_user_can( 'manage_options' ) ) : ?>
 			<form class="ecm-flow-inline" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<?php wp_nonce_field( 'ecm_flow_flag', 'ecm_nonce' ); ?><input type="hidden" name="action" value="ecm_flow_flag"><input type="hidden" name="event_id" value="<?php echo esc_attr( $event_id ); ?>">
-				<label><input type="checkbox" name="enable" value="1" <?php checked( $enabled ); ?>> اجازه آزمایش فرایند (فقط مدیر)</label><button class="button button-secondary">ثبت تنظیم</button>
+				<label><input type="checkbox" name="enable" value="1" <?php checked( $enabled ); ?>> فعال‌سازی هسته آزمایشی (برای رویدادهای اختصاصی)</label><button class="button button-secondary">ثبت تنظیم</button>
 			</form>
 			<?php endif; ?>
 			<?php if ( ! $event ) : ?><p>ابتدا یک رویداد بسازید.</p><?php return; endif; ?>
+			<p>فرم عمومی آزمایشی: <strong><?php echo ECM_Workflow_Public::available( $event ) ? 'فعال (Staging)' : 'غیرفعال'; ?></strong> | OTP بازیابی: <strong><?php echo defined( 'ECM_WORKFLOW_STAGING_OTP' ) && ECM_WORKFLOW_STAGING_OTP ? 'تنظیم‌شده' : 'خاموش'; ?></strong> | صدور کارت: <strong><?php echo ECM_Workflow_Review::issuance_allowed() ? 'فعال برای مدیر مجاز' : 'خاموش'; ?></strong></p>
 			<p>حالت رویداد: <strong><?php echo esc_html( ECM_Workflow::mode_for_event( $event ) ); ?></strong> | نسخه منتشرشده: <strong><?php echo $published ? esc_html( $published->version_number ) : 'ندارد'; ?></strong>. برای فعال‌شدن تست، در تنظیمات خود رویداد «فرایند اختصاصی» را انتخاب کنید.</p>
 			<h2>تنظیم مراحل و قالب‌ها</h2>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -161,7 +162,7 @@ final class ECM_Workflow_Staging {
 		exit;
 	}
 
-	private static function form_fields( object $event ): string {
+	public static function form_fields( object $event ): string {
 		$config = ECM_Events::config( $event );
 		$public = new ECM_Public();
 		$result = '<div class="ecm-field-grid">';
@@ -220,8 +221,8 @@ final class ECM_Workflow_Staging {
 		<p><a href="<?php echo esc_url( self::page_url( $event_id ) ); ?>">شروع درخواست آزمایشی دیگر</a> | <a href="<?php echo esc_url( add_query_arg( array( 'page' => 'ecm-flow-review', 'instance_id' => $instance_id ), admin_url( 'admin.php' ) ) ); ?>">بررسی مدیریتی درخواست</a></p></div><?php
 	}
 
-	/** Only administrator-supplied, schema-validated data enters the preview database. */
-	private static function validated_fields( object $event ): array|WP_Error {
+	/** Shared schema validation for administrator preview and staged public submissions. */
+	public static function validated_fields( object $event ): array|WP_Error {
 		$config = ECM_Events::config( $event );
 		$raw = isset( $_POST['ecm_field'] ) && is_array( $_POST['ecm_field'] ) ? wp_unslash( $_POST['ecm_field'] ) : array();
 		$raw_guests = isset( $_POST['ecm_guest'] ) && is_array( $_POST['ecm_guest'] ) ? wp_unslash( $_POST['ecm_guest'] ) : array();

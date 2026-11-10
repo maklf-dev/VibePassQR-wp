@@ -3,13 +3,13 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Phase-2 persistence adapter. Admin-only until the public form validator,
- * consent audit, receipt security and OTP proof are fully integrated.
+ * Version-pinned persistence adapter. All public writes require a nonce-verified
+ * controller and its ephemeral instance-scoped authorization.
  */
 final class ECM_Workflow_Instances {
 	/** Starts an internal draft; it cannot issue a card or trigger a message. */
 	public static function create_draft( int $event_id, string $mobile, array $validated_fields = array() ): array|WP_Error {
-		if ( ! current_user_can( 'manage_ecm_events' ) ) {
+		if ( ! current_user_can( 'manage_ecm_events' ) && ! ECM_Workflow_Public::write_authorized( 0 ) ) {
 			return new WP_Error( 'ecm_flow_forbidden', 'دسترسی مدیریت رویداد لازم است.' );
 		}
 		if ( ! ECM_Workflow::enabled() ) {
@@ -87,7 +87,7 @@ final class ECM_Workflow_Instances {
 
 	/** Only a minimal admin-owned draft transition is supported in this alpha. */
 	public static function advance_draft( int $instance_id, int $expected_version ): bool|WP_Error {
-		if ( ! current_user_can( 'manage_ecm_events' ) || ! ECM_Workflow::enabled() ) {
+		if ( ! ( current_user_can( 'manage_ecm_events' ) || ECM_Workflow_Public::write_authorized( $instance_id ) ) || ! ECM_Workflow::enabled() ) {
 			return new WP_Error( 'ecm_flow_forbidden', 'این عملیات در دسترس نیست.' );
 		}
 		if ( $instance_id < 1 || $expected_version < 0 ) {
@@ -150,7 +150,7 @@ final class ECM_Workflow_Instances {
 	}
 	/** Locked, audited acceptance of the exact immutable agreement version. */
 	public static function accept_agreement( int $instance_id, int $revision ): bool|WP_Error {
-		if ( ! self::preview_allowed() ) {
+		if ( ! self::preview_allowed( $instance_id ) ) {
 			return new WP_Error( 'ecm_flow_forbidden', 'این عملیات تنها در پیش‌نمایش مدیریت مجاز است.' );
 		}
 		global $wpdb;
@@ -195,7 +195,7 @@ final class ECM_Workflow_Instances {
 
 	/** One private receipt + review queue state; no registration/card/SMS issuance. */
 	public static function submit_receipt( int $instance_id, int $revision, array $file ): bool|WP_Error {
-		if ( ! self::preview_allowed() ) {
+		if ( ! self::preview_allowed( $instance_id ) ) {
 			return new WP_Error( 'ecm_flow_forbidden', 'این عملیات تنها در پیش‌نمایش مدیریت مجاز است.' );
 		}
 		$validated = ECM_Workflow_Receipts::validate_upload( $file );
@@ -245,6 +245,8 @@ final class ECM_Workflow_Instances {
 				return new WP_Error( 'ecm_flow_commit', 'تثبیت تراکنش موفق نبود.' );
 			}
 			$committed = true;
+			try { ECM_SMS::queue_workflow( $instance_id, 'workflow_submitted' ); }
+			catch ( Throwable $exception ) { ECM_Diagnostics::record( 'sms', 'Workflow notification callback failed', array( 'instance_id'=>$instance_id, 'state'=>'workflow_submitted' ) ); }
 			return true;
 		} finally {
 			if ( ! $committed ) {
@@ -256,8 +258,53 @@ final class ECM_Workflow_Instances {
 		}
 	}
 
-	private static function preview_allowed(): bool {
-		return ECM_Workflow::enabled() && current_user_can( 'manage_ecm_events' );
+
+	/** Public owner can resume only the receipt step after an admin correction. */
+	public static function resume_correction( int $instance_id, int $revision ): bool|WP_Error {
+		if ( ! ECM_Workflow_Public::write_authorized( $instance_id ) ) {
+			return new WP_Error( 'ecm_flow_forbidden', 'دسترسی به درخواست مجاز نیست.' );
+		}
+		global $wpdb;
+		$table = ECM_DB::table( 'flow_instances' );
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
+			return new WP_Error( 'ecm_flow_transaction', 'شروع تراکنش ممکن نشد.' );
+		}
+		$committed = false;
+		try {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id=%d FOR UPDATE", $instance_id ) );
+			if ( ! $row || (int) $row->lock_version !== $revision || ! ECM_Workflow::can_transition( (string) $row->state, 'awaiting_receipt' ) ) {
+				return new WP_Error( 'ecm_flow_stale_state', 'وضعیت درخواست برای اصلاح معتبر نیست.' );
+			}
+			$version = $wpdb->get_row( $wpdb->prepare( 'SELECT definition_json FROM ' . ECM_DB::table( 'flow_versions' ) . ' WHERE id=%d AND event_id=%d', (int) $row->flow_version_id, (int) $row->event_id ) );
+			$definition = $version ? json_decode( (string) $version->definition_json, true ) : null;
+			if ( ( $definition['steps'][2]['type'] ?? '' ) !== 'receipt' || empty( $definition['steps'][2]['key'] ) ) {
+				return new WP_Error( 'ecm_flow_bad_version', 'نسخه مرحله رسید معتبر نیست.' );
+			}
+			$now = ECM_Utils::now_utc();
+			if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET state='awaiting_receipt',current_step_key=%s,lock_version=lock_version+1,updated_at=%s WHERE id=%d AND lock_version=%d AND state='needs_correction'", (string) $definition['steps'][2]['key'], $now, $instance_id, $revision ) ) ) {
+				return new WP_Error( 'ecm_flow_concurrency', 'درخواست هم‌زمان تغییر کرده است.' );
+			}
+			if ( ! $wpdb->insert( ECM_DB::table( 'events' ), array(
+				'registration_id'=>0, 'domain_event_id'=>(int) $row->event_id, 'flow_instance_id'=>$instance_id,
+				'actor_user_id'=>0, 'correlation_id'=>'flow:' . $row->public_id,
+				'event_type'=>'workflow_correction_resumed',
+				'meta'=>wp_json_encode( array( 'from'=>'needs_correction', 'to'=>'awaiting_receipt', 'revision'=>$revision+1 ) ),
+				'created_at'=>$now,
+			) ) ) {
+				return new WP_Error( 'ecm_flow_audit_failed', 'ثبت سابقه اصلاح ممکن نشد.' );
+			}
+			if ( false === $wpdb->query( 'COMMIT' ) ) {
+				return new WP_Error( 'ecm_flow_commit', 'تثبیت تراکنش موفق نبود.' );
+			}
+			$committed = true;
+			return true;
+		} finally {
+			if ( ! $committed ) { $wpdb->query( 'ROLLBACK' ); }
+		}
+	}
+
+	private static function preview_allowed( int $instance_id ): bool {
+		return ECM_Workflow::enabled() && ( current_user_can( 'manage_ecm_events' ) || ECM_Workflow_Public::write_authorized( $instance_id ) );
 	}
 
 }

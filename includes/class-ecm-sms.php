@@ -41,6 +41,9 @@ final class ECM_SMS {
 	public static function states(): array {
 		return array(
 			'registration' => 'ثبت‌نام موفق و صدور کارت',
+			'workflow_submitted' => 'دریافت درخواست جدید (Workflow)',
+			'workflow_needs_correction' => 'درخواست اصلاح مدارک (Workflow)',
+			'workflow_rejected' => 'رد درخواست (Workflow)',
 			'attendance'   => 'ثبت حضور موفق',
 			'recovery'     => 'بازیابی کارت',
 			'repeat'       => 'ثبت حضور تکراری',
@@ -203,6 +206,72 @@ final class ECM_SMS {
 		}
 		// Automatic notifications never block registration or attendance requests.
 		wp_schedule_single_event( time() + 1, 'ecm_sms_job', array( $sms_id ) );
+	}
+
+
+	/**
+	 * Queue opt-in workflow notifications before a canonical registration exists.
+	 * Uses the existing SMS table, attempts worker, profiles, retries and reports.
+	 * Never inject tracking secrets, OTP, phone or receipt content into logs.
+	 */
+	public static function queue_workflow( int $instance_id, string $state ): void {
+		if ( ! ECM_Workflow::enabled() || ! defined( 'ECM_WORKFLOW_STAGING_SMS' ) || true !== ECM_WORKFLOW_STAGING_SMS
+			|| ! function_exists( 'wp_get_environment_type' ) || ! in_array( wp_get_environment_type(), array( 'local', 'development', 'staging' ), true )
+			|| ! in_array( $state, array( 'workflow_submitted', 'workflow_needs_correction', 'workflow_rejected' ), true ) ) {
+			return;
+		}
+		global $wpdb;
+		$row = $wpdb->get_row( $wpdb->prepare(
+			'SELECT id,event_id,lock_version,data_json,state FROM ' . ECM_DB::table( 'flow_instances' ) . ' WHERE id=%d', $instance_id
+		) );
+		if ( ! $row || ( 'workflow_submitted' === $state && 'under_review' !== $row->state )
+			|| ( 'workflow_needs_correction' === $state && 'needs_correction' !== $row->state )
+			|| ( 'workflow_rejected' === $state && 'rejected' !== $row->state ) ) { return; }
+		$event = ECM_Events::event( (int) $row->event_id );
+		if ( ! $event ) { return; }
+		$settings = ECM_Utils::settings();
+		if ( empty( $settings['sms_enabled'] ) ) { return; }
+		$config = ECM_Events::config( $event );
+		if ( empty( $config['sms_inherit'] ) ) {
+			$settings['sms_mode'] = 'pattern' === ( $config['sms_mode'] ?? '' ) ? 'pattern' : 'webservice';
+			$rule = (array) ( $config['sms_rules'][ $state ] ?? array() );
+			self::apply_rule( $settings, $state, $rule );
+		}
+		if ( empty( $settings[ 'sms_' . $state ] ) ) { return; }
+		$data = json_decode( (string) $row->data_json, true );
+		if ( ! is_array( $data ) ) { return; }
+		$mobile_field = sanitize_key( (string) ( $config['sms_field'] ?? 'mobile' ) );
+		$mobile = ECM_Utils::normalize_mobile( (string) ( $data[ $mobile_field ] ?? '' ) );
+		$recipient = $mobile ? self::phone( $mobile ) : '';
+		if ( ! $recipient ) { return; }
+		$vars = array(
+			'{event_name}' => (string) $event->title,
+			'{status}' => (string) ( self::states()[ $state ] ?? '' ),
+			'{date}' => ECM_Utils::utc_to_local( ECM_Utils::now_utc(), 'Y/m/d H:i' ),
+		);
+		$template = (string) ( $settings[ 'sms_' . $state . '_text' ] ?? '' );
+		$message = strtr( $template, $vars );
+		$payload = self::payload( $state, $recipient, $message, $vars, $settings, null );
+		$transport_key = sanitize_key( (string) ( $settings['sms_transport'] ?? 'edge' ) );
+		if ( ! ECM_SMS_Transports::get( $transport_key ) ) { $transport_key = 'edge'; }
+		$paused = ! empty( $settings['sms_transport_paused'] );
+		$status = is_wp_error( $payload ) ? 'failed' : ( $paused ? 'paused' : 'queued' );
+		$event_key = 'workflow-' . $instance_id . '-' . $state . '-r' . (int) $row->lock_version;
+		$table = ECM_DB::table( 'sms' );
+		if ( $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE event_key=%s LIMIT 1", $event_key ) ) ) { return; }
+		$ok = $wpdb->insert( $table, array(
+			'registration_id' => 0, 'participant_id' => 0, 'event_id' => (int) $event->id, 'session_id' => 0,
+			'notification_type' => $state, 'transport' => $transport_key, 'event_key' => $event_key,
+			'recipient' => $recipient, 'message' => $message,
+			'payload' => is_wp_error( $payload ) ? '{}' : wp_json_encode( $payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
+			'status' => $status, 'error_code' => is_wp_error( $payload ) ? sanitize_key( $payload->get_error_code() ) : ( $paused ? 'transport_paused' : null ),
+			'created_at' => ECM_Utils::now_utc(), 'updated_at' => ECM_Utils::now_utc(),
+		) );
+		if ( ! $ok ) {
+			ECM_Diagnostics::record( 'sms', 'Workflow SMS queue failed', array( 'instance_id'=>$instance_id, 'state'=>$state ) );
+			return;
+		}
+		if ( 'queued' === $status ) { wp_schedule_single_event( time() + 1, 'ecm_sms_job', array( (int) $wpdb->insert_id ) ); }
 	}
 
 	/** Resolve global -> event -> session notification policy. */

@@ -3,7 +3,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Phase 4: opt-in, read-only status lookup. A 128-bit random tracking secret
+ * Phase 4: independently opt-in, read-only status lookup. A 128-bit random tracking secret
  * AND matching normalized mobile are required. Mobile-only lookup awaits OTP.
  * This never exposes receipt images, form payloads or raw tracking secrets.
  */
@@ -20,8 +20,8 @@ final class ECM_Workflow_Tracking {
 	}
 
 	/** @return object|WP_Error */
-	public static function find( string $tracking, string $phone ) {
-		if ( ! self::available() ) { return new WP_Error( 'ecm_flow_tracking_disabled', 'پیگیری این فرایند هنوز فعال نیست.' ); }
+	public static function find( string $tracking, string $phone, bool $require_enabled = true ) {
+		if ( $require_enabled && ! self::available() ) { return new WP_Error( 'ecm_flow_tracking_disabled', 'پیگیری این فرایند هنوز فعال نیست.' ); }
 		$tracking = strtoupper( trim( ECM_Utils::normalize_digits( $tracking ) ) );
 		$phone = ECM_Utils::normalize_mobile( $phone );
 		if ( ! preg_match( '/^[A-F0-9]{32}$/D', $tracking ) || ! $phone ) {

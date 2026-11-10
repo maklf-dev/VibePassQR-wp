@@ -85,7 +85,7 @@ final class ECM_Public {
 		$has_content = false;
 		global $post;
 		if ( $post instanceof WP_Post ) {
-			foreach ( array( 'ecm_registration', 'ecm_recovery', 'ecm_card', 'ecm_attendance', 'ecm_manager', 'ecm_portal', 'ecm_event_list' ) as $shortcode ) {
+			foreach ( array( 'ecm_registration', 'ecm_recovery', 'ecm_card', 'ecm_attendance', 'ecm_manager', 'ecm_portal', 'ecm_event_list', 'ecm_flow' ) as $shortcode ) {
 				if ( has_shortcode( $post->post_content, $shortcode ) ) {
 					$has_content = true;
 					break;
@@ -122,7 +122,7 @@ final class ECM_Public {
 		<?php if ( ! $events ) : ?><p>در حال حاضر رویداد منتشرشده‌ای وجود ندارد.</p><?php endif; ?>
 		<div class="ecm-event-directory__grid"><?php foreach ( $events as $event ) : $active = ECM_Events::is_publicly_active( $event ); ?>
 		<article class="ecm-event-directory__item"><h2><?php echo esc_html( $event->title ); ?></h2><span class="ecm-badge"><?php echo esc_html( $active ? 'فعال' : 'غیرفعال' ); ?></span>
-		<?php if ( $active && 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) : ?><p>ثبت‌نام اختصاصی این رویداد هنوز برای عموم فعال نشده است.</p><?php elseif ( $active ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام در رویداد</a><?php else : ?><p><?php echo esc_html( (string) $event->disabled_message ); ?></p><?php endif; ?></article>
+		<?php if ( $active && 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) : ?><?php if ( ECM_Workflow_Public::available( $event ) ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام چندمرحله‌ای</a><?php else : ?><p>ثبت‌نام اختصاصی این رویداد هنوز برای عموم فعال نشده است.</p><?php endif; ?><?php elseif ( $active ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام در رویداد</a><?php else : ?><p><?php echo esc_html( (string) $event->disabled_message ); ?></p><?php endif; ?></article>
 		<?php endforeach; ?></div></section>
 		<?php
 		return (string) ob_get_clean();
@@ -140,7 +140,9 @@ final class ECM_Public {
 		// Fail closed on explicitly opted-in staging events: Classic would
 		// otherwise issue a card immediately and bypass manual review.
 		if ( 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) {
-			return $this->attendance_state( 'warning', 'این رویداد در حال آماده‌سازی فرایند ثبت‌نام اختصاصی است و ثبت‌نام عمومی آن هنوز فعال نشده است.', 'ثبت‌نام موقتاً غیرفعال است' );
+			return ECM_Workflow_Public::available( $event )
+				? ECM_Workflow_Public::render( $event )
+				: $this->attendance_state( 'warning', 'این رویداد در حال آماده‌سازی فرایند ثبت‌نام اختصاصی است و ثبت‌نام عمومی آن هنوز فعال نشده است.', 'ثبت‌نام موقتاً غیرفعال است' );
 		}
 		$settings = ECM_Events::config( $event );
 		$notice   = $this->notice_from_query();

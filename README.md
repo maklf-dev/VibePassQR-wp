@@ -1,13 +1,14 @@
-# Event Card Manager — 0.7.0-alpha.1
+# Event Card Manager — 0.7.0-alpha.4
 
 افزونه چندرویدادی وردپرس برای ثبت‌نام، صدور کارت و QR، بازیابی کارت، ثبت حضور کاربر یا اپراتور، مدیریت مهمان‌ها و گزارش‌های مدیریتی.
 
-## وضعیت انتشار آلفا 0.7.0-alpha.1
+## وضعیت انتشار آلفا 0.7.0-alpha.4
 
-این نسخه **فقط زیرساخت فاز دوم** موتور ثبت‌نام چندمرحله‌ای را به 0.6.7 اضافه می‌کند: Schema افزایشی، وضعیت‌ها، نسخه‌بندی و ذخیره داخلی پیش‌نویس. اجرای عمومی Workflow غیرفعال است و هنوز فرم، رسید، تأیید مدیر و صدور کارت جدید در دسترس کاربران نیست. برای نصب روی سایت اصلی با ثبت‌نام فعال توصیه نمی‌شود؛ ابتدا Staging را تست کنید.
+این نسخه یک فرایند چهارمرحله‌ای را به صورت **آزمایشی و فقط برای محیط Staging** در اختیار قرار می‌دهد: فرم عمومی، پذیرش میثاق‌نامه، رسید خصوصی، بررسی مدیر، پیگیری با کد و OTP اختیاری. فعال‌سازی عمومی، OTP، ارسال اعلان مراحل و صدور کارت از یکدیگر جدا و همگی پیش‌فرض خاموش هستند. رویدادهای Classic باید مثل قبل کار کنند. برای نصب روی سایت اصلی با ثبت‌نام فعال توصیه نمی‌شود.
 
-- [یادداشت انتشار آلفا](docs/RELEASE-NOTES-0.7.0-alpha.1-FA.md)
-- [گزارش QA آلفا](docs/QA-REPORT-0.7.0-alpha.1-FA.md)
+- [یادداشت انتشار آلفا ۴](docs/RELEASE-NOTES-0.7.0-alpha.4-FA.md)
+- [گزارش QA آلفا ۴](docs/QA-REPORT-0.7.0-alpha.4-FA.md)
+- [راهنمای آزمایش Staging](WORKFLOW-ALPHA4-FA.md)
 
 ## پیش‌نیازها
 
@@ -19,7 +20,7 @@
 
 ## نصب و ارتقا
 
-پیش از نصب از دیتابیس و `wp-content/uploads` نسخه پشتیبان تهیه کنید. برای ارتقا، ZIP جدید را روی نسخه قبلی جایگزین کنید و افزونه قبلی را Uninstall نکنید. نسخه 0.7.0-alpha.1 روی نسخه 0.6.7 به‌صورت افزایشی آماده شده و فقط در Staging آزمایش شود و شناسه ثبت‌نام، QRهای صادرشده، کارت‌ها، برگه‌ها و تنظیمات را حفظ می‌کند.
+پیش از نصب از دیتابیس و `wp-content/uploads` نسخه پشتیبان تهیه کنید. برای ارتقا، ZIP جدید را روی نسخه قبلی جایگزین کنید و افزونه قبلی را Uninstall نکنید. نسخه 0.7.0-alpha.4 روی نسخه 0.7.0-alpha.3 به‌صورت افزایشی آماده شده و فقط در Staging آزمایش شود و شناسه ثبت‌نام، QRهای صادرشده، کارت‌ها، برگه‌ها و تنظیمات را حفظ می‌کند.
 
 راهنمای کامل: [نصب و ارتقا](docs/INSTALLATION-UPGRADE-FA.md)
 
@@ -127,3 +128,10 @@ flags, test plan and limitations.
 ### 0.7.0-alpha.2 experimental Workflow preview
 
 For staging environments only. Administrators can edit versioned workflow steps and test form, agreement and private receipt submission. The Workflow flag is disabled by default, and **the public registration endpoint remains classic**. Set `ECM_PRIVATE_RECEIPT_DIR` to a writable directory *outside the webroot* before testing uploads. Review `docs/RELEASE-NOTES-0.7.0-alpha.2-FA.md` for the exact boundaries and manual QA procedure.
+
+
+## Workflow 0.7.0-alpha.4 (فاز ۵، آزمایشی)
+
+این انتشار یک فرم عمومی **فقط برای محیط Staging** به موتور چهارمرحله‌ای قبلی وصل می‌کند و اعلان‌های وضعیت را به صف پیامک موجود متصل می‌سازد. از این نسخه روی وب‌سایت ثبت‌نام فعال Production استفاده نکنید. فعال‌سازی Workflow در یک رویداد اختصاصی، مسیر Classic آن رویداد را می‌بندد؛ برای رویدادهای Classic رفتار قبلی ثابت است.
+
+برای راه‌اندازی، فایل `WORKFLOW-ALPHA4-FA.md` در همین بسته را بخوانید. به‌صورت پیش‌فرض، فرم عمومی، OTP و صدور کارت هر سه غیرفعال‌اند.
