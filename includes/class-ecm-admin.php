@@ -22,6 +22,9 @@ final class ECM_Admin {
 		add_submenu_page( 'ecm-dashboard', 'داشبورد', 'داشبورد', 'access_ecm', 'ecm-dashboard', array( $this, 'landing_page' ) );
 		add_submenu_page( 'ecm-dashboard', 'رویدادها', 'رویدادها', 'manage_ecm_events', 'ecm-events', array( 'ECM_Events', 'admin_page' ) );
 		add_submenu_page( 'ecm-dashboard', 'گزارش‌ها', 'گزارش‌ها', 'view_ecm_reports', 'ecm-reports', array( $this, 'report_page' ) );
+		if ( ECM_Import::available() ) {
+			add_submenu_page( 'ecm-dashboard', 'ورود گروهی', 'ورود گروهی', 'manage_ecm_imports', 'ecm-import', array( 'ECM_Import', 'page' ) );
+		}
 		add_submenu_page( 'ecm-dashboard', 'تنظیمات', 'تنظیمات', 'manage_ecm_settings', 'ecm-settings', array( $this, 'settings_page' ) );
 		add_submenu_page( 'ecm-dashboard', 'پیامک و اتصال', 'پیامک و اتصال', 'manage_ecm_sms', 'ecm-sms', array( 'ECM_SMS', 'admin_page' ) );
 	}

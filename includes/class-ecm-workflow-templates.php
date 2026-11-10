@@ -73,12 +73,22 @@ final class ECM_Workflow_Templates {
 		$source = isset( $step['html'] ) && '' !== trim( (string) $step['html'] ) ? (string) $step['html'] : $default;
 		$html = wp_kses_post( $source );
 		$html = preg_replace_callback(
-			'/(?:(?<=>)|\A)(\s*)\[(ecm_[a-z_]+)\](\s*)(?=<|\z)/u',
+			'/(?:(?<=>)|\A)(\s*)\[(ecm_[a-z_]+)(?:\s+key="([a-z][a-z0-9_]{0,79})")?\](\s*)(?=<|\z)/u',
 			static function ( array $m ) use ( $components ): string {
-				return array_key_exists( $m[2], $components ) ? $m[1] . $components[ $m[2] ] . $m[3] : $m[0];
+				$name = (string) $m[2];
+				$key = (string) ( $m[3] ?? '' );
+				if ( '' !== $key && ! in_array( $name, array( 'ecm_field', 'ecm_value' ), true ) ) { return $m[0]; }
+				if ( '' === $key && in_array( $name, array( 'ecm_field', 'ecm_value' ), true ) ) { return $m[0]; }
+				if ( ! array_key_exists( $name, $components ) ) { return $m[0]; }
+				$component = $components[$name];
+				if ( is_callable( $component ) ) {
+					$component = $component( $key );
+				} elseif ( '' !== $key ) { return $m[0]; }
+				return is_string( $component ) ? $m[1] . $component . $m[4] : $m[0];
 			},
 			$html
 		);
+
 		$css = self::sanitize_css( (string) ( $step['css'] ?? '' ) );
 		$style = '';
 		if ( ! is_wp_error( $css ) && $css ) {

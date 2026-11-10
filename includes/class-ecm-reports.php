@@ -17,7 +17,7 @@ final class ECM_Reports {
 		}
 		$legacy_list_request = ! isset( $_GET['ecm_view'] ) && ( isset( $_GET['ecm_event'] ) || isset( $_GET['ecm_events'] ) || isset( $_GET['ecm_session'] ) || isset( $_GET['ecm_payment'] ) || isset( $_GET['ecm_from'] ) || isset( $_GET['ecm_to'] ) || isset( $_GET['ecm_search'] ) || isset( $_GET['ecm_paged'] ) || isset( $_GET['cols'] ) );
 		$view = isset( $_GET['ecm_view'] ) ? sanitize_key( wp_unslash( $_GET['ecm_view'] ) ) : ( $legacy_list_request ? 'registrations' : 'overview' );
-		$allowed = array( 'overview', 'registrations', 'attendance', 'sms', 'people', 'operators', 'events', 'person', 'operator', 'event' );
+		$allowed = array( 'overview', 'registrations', 'attendance', 'sms', 'people', 'operators', 'events', 'analytics', 'person', 'operator', 'event' );
 		$view = in_array( $view, $allowed, true ) ? $view : 'overview';
 		if ( 'registrations' === $view ) {
 			$content = ECM_Admin::report_markup( $admin );
@@ -25,6 +25,8 @@ final class ECM_Reports {
 			$content = self::attendance_view( $admin );
 		} elseif ( 'sms' === $view ) {
 			$content = self::sms_view( $admin );
+		} elseif ( 'analytics' === $view ) {
+			$content = ECM_Analytics::render( $admin );
 		} elseif ( 'people' === $view ) {
 			$content = self::people_view( $admin );
 		} elseif ( 'operators' === $view ) {
@@ -71,6 +73,7 @@ final class ECM_Reports {
 			'people'        => 'اشخاص',
 			'operators'     => 'اپراتورها',
 			'events'        => 'رویدادها',
+			'analytics'     => 'تحلیل و نمودار',
 		);
 		ob_start();
 		?>

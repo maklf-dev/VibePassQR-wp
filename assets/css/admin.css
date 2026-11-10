@@ -459,3 +459,19 @@
 
 /* 0.6.7 shared event scope: narrow, responsive, no global selector overrides. */
 .ecm-report-scope{margin:12px 0 18px}.ecm-report-scope details{border:1px solid var(--ecm-line,#d6dce5);border-radius:12px;padding:10px 14px}.ecm-report-scope summary{cursor:pointer;font-weight:600}.ecm-report-scope__choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:12px 0}.ecm-report-scope__choices label{display:flex;gap:7px;align-items:center;font-weight:400}.ecm-report-scope__choices input{margin:0}.ecm-report-scope button{margin:8px 0 0}@media(max-width:600px){.ecm-report-scope__choices{grid-template-columns:1fr}}
+
+/* 0.7.0-alpha.6: scoped, responsive reporting and event filters. */
+.ecm-analytics__form,.ecm-event-list-filters {display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:14px 0}
+.ecm-analytics__form > label,.ecm-event-list-filters > label {display:flex;flex-direction:column;gap:5px;font-weight:600}
+.ecm-analytics__form fieldset {display:flex;gap:12px;flex-wrap:wrap;align-items:center;border:1px solid #cbd5e1;border-radius:8px;padding:9px 12px;max-width:100%}
+.ecm-analytics__form fieldset label {font-weight:normal;white-space:nowrap}
+.ecm-analytics__totals {display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:20px 0}
+.ecm-analytics__totals > div {background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.ecm-analytics__totals strong {font-size:22px;color:#0f172a}
+.ecm-analytics__chart {max-width:100%;overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;background:white;padding:12px}
+.ecm-analytics__chart svg {display:block;min-width:480px}
+.ecm-analytics__table-wrap {max-width:100%;overflow:auto;margin-top:20px}
+.ecm-analytics__actions {display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.ecm-import-page .ecm-subpanel {margin:16px 0;padding:18px;background:#fff;border:1px solid #d7dee7;border-radius:10px;max-width:1100px}
+.ecm-import-page input[type=file] {max-width:100%}
+@media(max-width:700px){.ecm-analytics__form{flex-direction:column;align-items:stretch}.ecm-analytics__chart svg{min-width:620px}.ecm-import-page .ecm-subpanel{padding:12px}}

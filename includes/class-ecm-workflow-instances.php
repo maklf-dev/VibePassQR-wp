@@ -7,6 +7,112 @@ defined( 'ABSPATH' ) || exit;
  * controller and its ephemeral instance-scoped authorization.
  */
 final class ECM_Workflow_Instances {
+	/** Shared schema fingerprint prevents editing against a changed event field definition. */
+	public static function form_schema_hash( object $event ): string {
+		$config = ECM_Events::config( $event );
+		return hash( 'sha256', wp_json_encode( (array) ( $config['fields'] ?? array() ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) );
+	}
+
+	/** Owner-verified fields edit. Does not alter primary identity or approved cards. */
+	public static function update_fields( int $instance_id, int $revision, string $mobile, array $fields ): bool|WP_Error {
+		if ( ! ECM_Workflow_Public::write_authorized( $instance_id ) || $instance_id < 1 || $revision < 0 ) {
+			return new WP_Error( 'ecm_flow_forbidden', 'نشست معتبر برای ویرایش وجود ندارد.' );
+		}
+		global $wpdb;
+		$table = ECM_DB::table( 'flow_instances' );
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) { return new WP_Error( 'ecm_flow_transaction', 'شروع تراکنش ممکن نشد.' ); }
+		$committed = false;
+		try {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id=%d FOR UPDATE", $instance_id ) );
+			if ( ! $row || (int) $row->lock_version !== $revision
+				|| ! in_array( (string) $row->state, array( 'awaiting_agreement', 'awaiting_receipt', 'needs_correction' ), true )
+				|| (int) $row->linked_registration_id > 0 ) {
+				return new WP_Error( 'ecm_flow_edit_locked', 'ویرایش در این مرحله ممکن نیست یا اطلاعات تغییر کرده است.' );
+			}
+			$identity = ECM_Workflow::identity_digest( (int) $row->event_id, $mobile );
+			if ( is_wp_error( $identity ) || ! hash_equals( (string) $row->identifier_digest, (string) $identity ) ) {
+				return new WP_Error( 'ecm_flow_mobile_change_requires_otp', 'تغییر شماره موبایل فقط با احراز هویت مجدد امکان‌پذیر است.' );
+			}
+			$event = ECM_Events::event( (int) $row->event_id );
+			$old = json_decode( (string) $row->data_json, true );
+			if ( ! $event || ! is_array( $old ) || ! isset( $old['__schema_hash'] )
+				|| ! hash_equals( (string) $old['__schema_hash'], self::form_schema_hash( $event ) ) ) {
+				return new WP_Error( 'ecm_flow_schema_changed', 'ساختار فرم تغییر کرده است؛ برای ویرایش نیاز به بررسی مدیر است.' );
+			}
+			if ( count( $fields ) > 49 ) { return new WP_Error( 'ecm_flow_edit_too_large', 'تعداد فیلدها نامعتبر است.' ); }
+			$updated = array( '__schema_hash' => (string) $old['__schema_hash'] );
+			foreach ( $fields as $key => $value ) {
+				if ( ! is_string( $key ) || ( '__guests' !== $key && ! preg_match( '/^[a-z][a-z0-9_]{0,79}$/D', $key ) ) || ! is_scalar( $value ) ) {
+					return new WP_Error( 'ecm_flow_invalid_data', 'اطلاعات ویرایش نامعتبر است.' );
+				}
+				if ( '__guests' === $key ) {
+					$guests = json_decode( (string) $value, true );
+					if ( ! is_array( $guests ) || count( $guests ) > 20 ) { return new WP_Error( 'ecm_flow_invalid_guests', 'اطلاعات مهمان‌ها معتبر نیست.' ); }
+					$updated[$key] = substr( (string) $value, 0, 16000 );
+				} else {
+					$updated[$key] = substr( sanitize_textarea_field( (string) $value ), 0, 2048 );
+				}
+			}
+			$encoded = wp_json_encode( $updated, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+			if ( ! $encoded || strlen( $encoded ) > 32768 ) { return new WP_Error( 'ecm_flow_data_too_large', 'حجم فرم بیش از حد مجاز است.' ); }
+			$changed = array();
+			foreach ( array_unique( array_merge( array_keys( $old ), array_keys( $updated ) ) ) as $key ) {
+				if ( '__schema_hash' !== $key && ( $old[$key] ?? null ) !== ( $updated[$key] ?? null ) ) { $changed[] = $key; }
+			}
+			if ( $changed ) {
+				$now = ECM_Utils::now_utc();
+				$count = $wpdb->query( $wpdb->prepare(
+					"UPDATE {$table} SET data_json=%s,lock_version=lock_version+1,updated_at=%s WHERE id=%d AND lock_version=%d AND state=%s",
+					$encoded, $now, $instance_id, $revision, $row->state
+				) );
+				if ( 1 !== $count ) { return new WP_Error( 'ecm_flow_concurrency', 'درخواست هم‌زمان تغییر کرده است.' ); }
+				if ( ! $wpdb->insert( ECM_DB::table( 'events' ), array(
+					'registration_id'=>0, 'domain_event_id'=>(int) $row->event_id, 'flow_instance_id'=>$instance_id,
+					'actor_user_id'=>get_current_user_id(), 'correlation_id'=>'flow:' . $row->public_id,
+					'event_type'=>'workflow_form_edited', 'meta'=>wp_json_encode( array( 'changed_keys'=>$changed, 'revision'=>$revision+1 ) ),
+					'created_at'=>$now,
+				) ) ) { return new WP_Error( 'ecm_flow_audit_failed', 'ذخیره تاریخچه ویرایش ممکن نشد.' ); }
+			}
+			if ( false === $wpdb->query( 'COMMIT' ) ) { return new WP_Error( 'ecm_flow_commit', 'تثبیت تراکنش ممکن نشد.' ); }
+			$committed = true;
+			return true;
+		} finally {
+			if ( ! $committed ) { $wpdb->query( 'ROLLBACK' ); }
+		}
+	}
+
+	/** One-time recovery after a fresh SMS OTP; invalidate the old tracking secret. */
+	public static function rotate_tracking( int $instance_id, int $revision ): string|WP_Error {
+		if ( ! ECM_Workflow_Public::write_authorized( $instance_id ) || $instance_id < 1 || $revision < 0 ) {
+			return new WP_Error( 'ecm_flow_forbidden', 'بازیابی کد فقط پس از تأیید مالکیت موبایل مجاز است.' );
+		}
+		global $wpdb;
+		$table = ECM_DB::table( 'flow_instances' );
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) { return new WP_Error( 'ecm_flow_transaction', 'تراکنش شروع نشد.' ); }
+		$committed = false;
+		try {
+			$row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id=%d FOR UPDATE", $instance_id ) );
+			if ( ! $row || (int) $row->lock_version !== $revision ) { return new WP_Error( 'ecm_flow_stale_state', 'درخواست تغییر کرده است؛ بازیابی را تکرار کنید.' ); }
+			$tracking = strtoupper( bin2hex( random_bytes( 16 ) ) );
+			$now = ECM_Utils::now_utc();
+			if ( 1 !== $wpdb->query( $wpdb->prepare(
+				"UPDATE {$table} SET tracking_hash=%s,lock_version=lock_version+1,updated_at=%s WHERE id=%d AND lock_version=%d",
+				ECM_Workflow::tracking_digest( $tracking ), $now, $instance_id, $revision
+			) ) ) { return new WP_Error( 'ecm_flow_concurrency', 'کد پیگیری قبلاً تغییر کرده است.' ); }
+			if ( ! $wpdb->insert( ECM_DB::table( 'events' ), array(
+				'registration_id'=>0,'domain_event_id'=>(int) $row->event_id,'flow_instance_id'=>$instance_id,
+				'actor_user_id'=>get_current_user_id(),'correlation_id'=>'flow:' . $row->public_id,
+				'event_type'=>'workflow_tracking_rotated','meta'=>wp_json_encode( array( 'revision'=>$revision+1, 'method'=>'mobile_otp' ) ),
+				'created_at'=>$now,
+			) ) ) { return new WP_Error( 'ecm_flow_audit_failed', 'ذخیره تاریخچه بازیابی ممکن نشد.' ); }
+			if ( false === $wpdb->query( 'COMMIT' ) ) { return new WP_Error( 'ecm_flow_commit', 'ثبت تراکنش ممکن نشد.' ); }
+			$committed = true;
+			return $tracking;
+		} finally {
+			if ( ! $committed ) { $wpdb->query( 'ROLLBACK' ); }
+		}
+	}
+
 	/** Starts an internal draft; it cannot issue a card or trigger a message. */
 	public static function create_draft( int $event_id, string $mobile, array $validated_fields = array() ): array|WP_Error {
 		if ( ! current_user_can( 'manage_ecm_events' ) && ! ECM_Workflow_Public::write_authorized( 0 ) ) {
@@ -56,7 +162,7 @@ final class ECM_Workflow_Instances {
 		// Pin the current form schema. A later field-builder edit must not
 		// silently discard or reinterpret submitted data on approval.
 		$config = ECM_Events::config( $event );
-		$data['__schema_hash'] = hash( 'sha256', wp_json_encode( (array) ( $config['fields'] ?? array() ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) );
+		$data['__schema_hash'] = self::form_schema_hash( $event );
 		$encoded = wp_json_encode( $data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
 		if ( ! $encoded || strlen( $encoded ) > 32768 ) {
 			return new WP_Error( 'ecm_flow_data_too_large', 'حجم داده ثبت‌نام بیش از حد مجاز است.' );

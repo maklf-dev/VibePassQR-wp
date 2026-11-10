@@ -109,7 +109,7 @@ final class ECM_Workflow_Staging {
 				<?php if ( 'receipt' === $type ) : ?><label>شماره کارت ۱۶ رقمی<input name="steps[<?php echo esc_attr( $i ); ?>][card_number]" type="text" inputmode="numeric" value="<?php echo esc_attr( $item['card_number'] ?? '' ); ?>"></label><label>نام صاحب حساب<input name="steps[<?php echo esc_attr( $i ); ?>][account_holder]" value="<?php echo esc_attr( $item['account_holder'] ?? '' ); ?>"></label><label>توضیحات پرداخت<textarea name="steps[<?php echo esc_attr( $i ); ?>][payment_note]" rows="2"><?php echo esc_textarea( $item['payment_note'] ?? '' ); ?></textarea></label><?php endif; ?>
 				</details>
 				<?php endforeach; ?>
-				<p class="description">توکن‌های مجاز در این آلفا: <code>[ecm_fields]</code>، <code>[ecm_agreement]</code>، <code>[ecm_payment_details]</code>، <code>[ecm_receipt_upload]</code>، <code>[ecm_status]</code> و <code>[ecm_tracking_code]</code>. هر شورت‌کد را تنها در متن مستقل یک عنصر HTML قرار دهید.</p>
+				<p class="description">توکن‌های مجاز در این آلفا: <code>[ecm_fields]</code>، <code>[ecm_agreement]</code>، <code>[ecm_payment_details]</code>، <code>[ecm_receipt_upload]</code>، <code>[ecm_status]</code> و <code>[ecm_tracking_code]</code>، <code>[ecm_event_title]</code>، <code>[ecm_step_progress]</code>، <code>[ecm_form_summary]</code>، <code>[ecm_rejection_reason]</code>، <code>[ecm_card_access]</code>، <code>[ecm_edit_fields]</code>، <code>[ecm_value key="full_name"]</code> و <code>[ecm_field key="full_name"]</code>. هر شورت‌کد را تنها در متن مستقل یک عنصر HTML قرار دهید.</p>
 				<p><button class="button button-primary" <?php disabled( ! $enabled ); ?>>انتشار نسخه جدید</button></p>
 			</form>
 			<hr><h2>آزمایش مراحل (فقط مدیر)</h2>
@@ -150,6 +150,20 @@ final class ECM_Workflow_Staging {
 		foreach ( $required as $i => $token ) {
 			$source = trim( (string) ( $definition['steps'][$i]['html'] ?? '' ) );
 			if ( '' === $source ) { continue; } // Empty template uses the safe system default.
+			if ( 0 === $i && ! preg_match( '~(?:>|^)\s*\[ecm_fields\]\s*(?:<|$)~u', $source ) ) {
+				// Full custom form layouts may place all controls individually, with no duplicate [ecm_fields].
+				$event = ECM_Events::event( $event_id );
+				$config = $event ? ECM_Events::config( $event ) : array();
+				if ( ! $event ) { wp_die( 'رویداد معتبر نیست.' ); }
+				foreach ( (array) ( $config['fields'] ?? array() ) as $field ) {
+					$key = sanitize_key( (string) ( $field['key'] ?? '' ) );
+					if ( ! $key || 'html' === (string) ( $field['type'] ?? '' ) ) { continue; }
+					if ( ! preg_match( '~(?:>|^)\s*\[ecm_field\s+key="' . preg_quote( $key, '~' ) . '"\]\s*(?:<|$)~u', $source ) ) {
+						wp_die( 'فیلد ضروری فرم [' . esc_html( $key ) . '] در قالب مرحله وجود ندارد.' );
+					}
+				}
+				continue;
+			}
 			if ( ! preg_match( '~(?:>|^)\s*\[' . preg_quote( $token, '~' ) . '\]\s*(?:<|$)~u', $source ) ) {
 				wp_die( 'کنترل ضروری [' . esc_html( $token ) . '] باید به‌صورت مستقل در متن مرحله باشد.' );
 			}
@@ -162,12 +176,17 @@ final class ECM_Workflow_Staging {
 		exit;
 	}
 
-	public static function form_fields( object $event ): string {
+	/** Hydrate safe field values; guest/radio prefill is handled by workflow-only JS. */
+	public static function form_fields( object $event, array $saved = array() ): string {
 		$config = ECM_Events::config( $event );
 		$public = new ECM_Public();
-		$result = '<div class="ecm-field-grid">';
+		$persisted = array_filter( $saved, static fn( $key ): bool => ! str_starts_with( (string) $key, '__' ), ARRAY_FILTER_USE_KEY );
+		if ( isset( $saved['__guests'] ) ) { $persisted['__guests'] = (string) $saved['__guests']; }
+		$json = wp_json_encode( $persisted, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+		$result = '<div class="ecm-field-grid"' . ( $saved && is_string( $json ) ? ' data-ecm-flow-stored="' . esc_attr( $json ) . '"' : '' ) . '>';
 		foreach ( (array) ( $config['fields'] ?? array() ) as $field ) {
-			$result .= $public->render_field( (array) $field, '', $event );
+			$key = sanitize_key( (string) ( $field['key'] ?? '' ) );
+			$result .= $public->render_field( (array) $field, (string) ( $saved[$key] ?? '' ), $event );
 		}
 		return $result . '</div>';
 	}

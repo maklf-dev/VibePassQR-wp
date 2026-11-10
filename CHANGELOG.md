@@ -1,3 +1,22 @@
+## 0.7.0-alpha.6 (Phase 7, analytics & staged bulk issuance)
+
+- Add a read-only analytics report builder with safe group/metric allowlists, independent aggregate queries, UTC date/hour buckets, multiple event filtering, bar/line/pie SVG rendering, and downloadable SVG/CSV.
+- Add event listing search and active/inactive/draft/archived filters without changing event persistence.
+- Add administrator-only, staging-flagged CSV/XLSX bulk card creation for Classic events with no required payment; encrypted preview, field and guest validation, 100-row cap, duplicate guards, InnoDB checks, transaction rollback, and no SMS.
+- No new database schema and no changes to Classic registration, QR/ticket, OTP, workflow issuance, or SMS core.
+- Mock-only QA: phase6 regression and phase7 smoke; real WordPress/MariaDB/HTTP/XLSX integration still required.
+
+## 0.7.0-alpha.5 (Phase 6, staging only)
+
+- Require a fresh SMS OTP before a **public** workflow draft is inserted; staged form payload is AES-256-GCM encrypted and expires after 5 minutes.
+- Add SMS-OTP recovery by phone without the original tracking code. A successful verified recovery rotates the 128-bit tracking secret and invalidates the old one.
+- Add protected owner edit of pre-approval form fields, including guests, with immutable primary mobile, schema fingerprint, revision locks and metadata-only audit.
+- Expand safe, standalone template placeholders with event, progress, summary, card link, editable-form link and keyed field/value tokens.
+- Add identity-level advisory lock for race-safe public enrollment; add recipient-based OTP throttling.
+- Add a workflow-only prefill helper JS; leave Classic UI, QR issuance, attendance and SMS core untouched.
+- All public workflow features remain disabled by default and staging-only. No schema DDL change.
+- Static/simulated QA only; real WordPress/MariaDB/HTTP/SMS tests are required before production.
+
 ## 0.7.0-alpha.4 (Phase 5, staging only)
 
 - Added opt-in staging-only public four-step workflow front-end and `[ecm_flow]` shortcode.

@@ -573,6 +573,18 @@ final class ECM_Events {
 			wp_die( 'Forbidden', 403 );
 		}
 		$events     = self::all();
+		// Display-only filtering; the editing context and stored event data never change.
+		$list_filter = isset( $_GET['ecm_list_status'] ) ? sanitize_key( wp_unslash( (string) $_GET['ecm_list_status'] ) ) : 'all';
+		if ( ! in_array( $list_filter, array( 'all', 'active', 'inactive', 'draft', 'archived' ), true ) ) { $list_filter = 'all'; }
+		$list_search = isset( $_GET['ecm_list_search'] ) ? substr( sanitize_text_field( wp_unslash( (string) $_GET['ecm_list_search'] ) ), 0, 100 ) : '';
+		$listed_events = array_values( array_filter( $events, static function ( object $item ) use ( $list_filter, $list_search ): bool {
+			$active = 'published' === (string) $item->status && (int) $item->enabled === 1;
+			if ( 'active' === $list_filter && ! $active ) { return false; }
+			if ( 'inactive' === $list_filter && $active ) { return false; }
+			if ( in_array( $list_filter, array( 'draft', 'archived' ), true ) && (string) $item->status !== $list_filter ) { return false; }
+			if ( $list_search && function_exists( 'mb_stripos' ) ) { return mb_stripos( (string) $item->title . ' ' . (string) $item->slug, $list_search ) !== false; }
+			return ! $list_search || stripos( (string) $item->title . ' ' . (string) $item->slug, $list_search ) !== false;
+		} ) );
 		$edit_id    = isset( $_GET['edit'] ) ? absint( $_GET['edit'] ) : 0;
 		$current    = $edit_id ? self::event( $edit_id ) : null;
 		$is_new     = isset( $_GET['new'] ) || ! $current;
@@ -609,8 +621,16 @@ final class ECM_Events {
 			<?php if ( isset( $_GET['saved'] ) ) : ?><div class="notice notice-success is-dismissible"><p>رویداد و دسترسی اپراتورها ذخیره شد.</p></div><?php endif; ?>
 			<div class="ecm-event-admin-layout">
 				<section class="ecm-panel is-active ecm-event-list-panel"><div class="ecm-panel__title"><div><h2>فهرست رویدادها</h2><p>رویداد دارای سابقه حذف نمی‌شود؛ در صورت نیاز آن را بایگانی کنید.</p></div></div>
+					<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="ecm-event-list-filters">
+						<input type="hidden" name="page" value="ecm-events">
+						<label>وضعیت <select name="ecm_list_status"><option value="all" <?php selected( $list_filter, 'all' ); ?>>همه</option><option value="active" <?php selected( $list_filter, 'active' ); ?>>فعال</option><option value="inactive" <?php selected( $list_filter, 'inactive' ); ?>>غیرفعال</option><option value="draft" <?php selected( $list_filter, 'draft' ); ?>>پیش‌نویس</option><option value="archived" <?php selected( $list_filter, 'archived' ); ?>>بایگانی</option></select></label>
+						<label>جست‌وجو <input type="search" name="ecm_list_search" value="<?php echo esc_attr( $list_search ); ?>" placeholder="عنوان یا شناسه رویداد"></label>
+						<button type="submit" class="button">اعمال فیلتر</button>
+					</form>
+					<p class="description"><?php echo esc_html( count( $listed_events ) . ' رویداد از ' . count( $events ) . ' رویداد' ); ?></p>
 					<div class="ecm-event-admin-list">
-						<?php foreach ( $events as $event ) : ?>
+						<?php if ( ! $listed_events ) : ?><p>رویدادی مطابق فیلتر پیدا نشد.</p><?php endif; ?>
+						<?php foreach ( $listed_events as $event ) : ?>
 							<div class="ecm-event-admin-list__item"><a class="<?php echo (int) $event->id === (int) $current->id ? 'is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( array( 'page' => 'ecm-events', 'edit' => (int) $event->id ), admin_url( 'admin.php' ) ) ); ?>"><strong><?php echo esc_html( $event->title ); ?></strong><span><?php echo esc_html( $event->slug ); ?></span><small><?php echo esc_html( self::status_label( $event->status ) ); ?><?php echo empty( $event->enabled ) ? ' · غیرفعال' : ''; ?><?php echo (int) $event->id === $default_id ? ' · پیش‌فرض' : ''; ?></small></a><a class="button button-small" href="<?php echo esc_url( ECM_Reports::url( 'event', array( 'ecm_id' => (int) $event->id ), true ) ); ?>">گزارش</a></div>
 					<?php endforeach; ?>
 					</div>

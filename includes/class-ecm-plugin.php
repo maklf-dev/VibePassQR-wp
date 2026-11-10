@@ -25,6 +25,8 @@ final class ECM_Plugin {
 		ECM_Tickets::hooks();
 		ECM_Operator::hooks();
 		ECM_Reports::hooks();
+		ECM_Analytics::hooks();
+		ECM_Import::hooks();
 		ECM_Portal::hooks();
 		ECM_Card_Document::hooks();
 		add_action( 'init', array( $this, 'maybe_upgrade' ), 1 );
