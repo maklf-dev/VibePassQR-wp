@@ -15,9 +15,9 @@ final class ECM_Reports {
 		if ( ! current_user_can( 'view_ecm_reports' ) ) {
 			return '<div class="ecm-state ecm-state--error"><h1>دسترسی ندارید</h1></div>';
 		}
-		$legacy_list_request = ! isset( $_GET['ecm_view'] ) && ( isset( $_GET['ecm_event'] ) || isset( $_GET['ecm_events'] ) || isset( $_GET['ecm_session'] ) || isset( $_GET['ecm_payment'] ) || isset( $_GET['ecm_from'] ) || isset( $_GET['ecm_to'] ) || isset( $_GET['ecm_search'] ) || isset( $_GET['ecm_paged'] ) || isset( $_GET['cols'] ) );
+		$legacy_list_request = ! isset( $_GET['ecm_view'] ) && ( isset( $_GET['ecm_event'] ) || isset( $_GET['ecm_events'] ) || isset( $_GET['ecm_comprehensive'] ) || isset( $_GET['ecm_session'] ) || isset( $_GET['ecm_payment'] ) || isset( $_GET['ecm_from'] ) || isset( $_GET['ecm_to'] ) || isset( $_GET['ecm_search'] ) || isset( $_GET['ecm_paged'] ) || isset( $_GET['cols'] ) );
 		$view = isset( $_GET['ecm_view'] ) ? sanitize_key( wp_unslash( $_GET['ecm_view'] ) ) : ( $legacy_list_request ? 'registrations' : 'overview' );
-		$allowed = array( 'overview', 'registrations', 'attendance', 'sms', 'people', 'operators', 'events', 'analytics', 'person', 'operator', 'event' );
+		$allowed = array( 'overview', 'registrations', 'attendance', 'sms', 'people', 'operators', 'events', 'person', 'operator', 'event' );
 		$view = in_array( $view, $allowed, true ) ? $view : 'overview';
 		if ( 'registrations' === $view ) {
 			$content = ECM_Admin::report_markup( $admin );
@@ -25,8 +25,6 @@ final class ECM_Reports {
 			$content = self::attendance_view( $admin );
 		} elseif ( 'sms' === $view ) {
 			$content = self::sms_view( $admin );
-		} elseif ( 'analytics' === $view ) {
-			$content = ECM_Analytics::render( $admin );
 		} elseif ( 'people' === $view ) {
 			$content = self::people_view( $admin );
 		} elseif ( 'operators' === $view ) {
@@ -57,11 +55,7 @@ final class ECM_Reports {
 			$is_portal = ! empty( $pages['portal'] ) && is_page( (int) $pages['portal'] );
 			$base = $is_portal ? ECM_Portal::url( array( 'ecm_portal_view' => 'reports' ) ) : ECM_Utils::page_url( 'manager' );
 		}
-		$scope = ECM_Report_Scope::query_args();
-		if ( array_key_exists( 'ecm_event', $args ) && ! array_key_exists( 'ecm_events', $args ) ) {
-			$scope = array(); // Respect historical single-event links and event-profile drilldowns.
-		}
-		return add_query_arg( array_merge( $scope, array( 'ecm_view' => $view ), $args ), $base );
+		return add_query_arg( array_merge( array( 'ecm_view' => $view ), $args ), $base );
 	}
 
 	private static function header( string $view, bool $admin ): string {
@@ -73,7 +67,6 @@ final class ECM_Reports {
 			'people'        => 'اشخاص',
 			'operators'     => 'اپراتورها',
 			'events'        => 'رویدادها',
-			'analytics'     => 'تحلیل و نمودار',
 		);
 		ob_start();
 		?>
@@ -82,7 +75,6 @@ final class ECM_Reports {
 			<div class="ecm-report-v2-head__actions"><?php if ( ! $admin && current_user_can( 'record_ecm_attendance' ) ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Portal::url( array( 'ecm_portal_view' => 'checkin' ) ) ); ?>">ثبت سریع حضور</a><?php endif; ?></div>
 		</div>
 		<nav class="ecm-report-nav" aria-label="بخش‌های گزارش"><?php foreach ( $items as $key => $label ) : ?><a class="<?php echo esc_attr( ( $view === $key || ( 'person' === $view && 'people' === $key ) || ( 'operator' === $view && 'operators' === $key ) || ( 'event' === $view && 'events' === $key ) ) ? 'is-active' : '' ); ?>" href="<?php echo esc_url( self::url( $key, array(), $admin ) ); ?>"><?php echo esc_html( $label ); ?></a><?php endforeach; ?></nav>
-		<?php if ( ! in_array( $view, array( 'person', 'operator', 'event' ), true ) ) echo ECM_Report_Scope::selector( $view, $admin ); ?>
 		<?php
 		return (string) ob_get_clean();
 	}
@@ -94,21 +86,15 @@ final class ECM_Reports {
 		$a = ECM_DB::table( 'attendance' );
 		$e = ECM_DB::table( 'event_definitions' );
 		$s = ECM_DB::table( 'sessions' );
-		$scope_r = ECM_Report_Scope::sql_in( 'event_id' );
-		$scope_rx = ECM_Report_Scope::sql_in( 'rx.event_id' );
-		$scope_ax = ECM_Report_Scope::sql_in( 'ax.event_id' );
-		$scope_e = ECM_Report_Scope::sql_in( 'id' );
-		$scope_s = ECM_Report_Scope::sql_in( 'event_id' );
-		$scope_q = ECM_Report_Scope::sql_in( 'q.event_id' );
-		$stats = $wpdb->get_row( "SELECT (SELECT COUNT(*) FROM {$r} WHERE is_test=0{$scope_r}) registrations,(SELECT COUNT(*) FROM {$r} WHERE is_test=0{$scope_r} AND payment_status='paid') paid_registrations,(SELECT COALESCE(SUM(amount_rial),0) FROM {$r} WHERE is_test=0{$scope_r} AND payment_status='paid') total_paid,(SELECT COUNT(*) FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.status='active'{$scope_rx}) participants,(SELECT COUNT(*) FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.participant_type='guest' AND px.status='active'{$scope_rx}) guests,(SELECT COUNT(*) FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success'{$scope_ax}) attendances,(SELECT COUNT(DISTINCT ax.participant_id) FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success'{$scope_ax}) attended_people,(SELECT COUNT(*) FROM {$e} WHERE status='published' AND enabled=1{$scope_e}) active_events,(SELECT COUNT(*) FROM {$s} WHERE enabled=1{$scope_s}) sessions" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$operators = $wpdb->get_results( "SELECT a.recorded_by_user_id,MAX(a.recorder_name) recorder_name,MAX(a.recorder_code) recorder_code,COUNT(*) total,MAX(a.created_at) last_at FROM {$a} a INNER JOIN {$r} rx ON rx.id=a.registration_id AND rx.is_test=0 WHERE a.recorded_by_user_id>0{$scope_rx} GROUP BY a.recorded_by_user_id ORDER BY total DESC LIMIT 8" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$stats = $wpdb->get_row( "SELECT (SELECT COUNT(*) FROM {$r} WHERE is_test=0) registrations,(SELECT COUNT(*) FROM {$r} WHERE is_test=0 AND payment_status='paid') paid_registrations,(SELECT COALESCE(SUM(amount_rial),0) FROM {$r} WHERE is_test=0 AND payment_status='paid') total_paid,(SELECT COUNT(*) FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.status='active') participants,(SELECT COUNT(*) FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.participant_type='guest' AND px.status='active') guests,(SELECT COUNT(*) FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success') attendances,(SELECT COUNT(DISTINCT ax.participant_id) FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success') attended_people,(SELECT COUNT(*) FROM {$e} WHERE status='published' AND enabled=1) active_events,(SELECT COUNT(*) FROM {$s} WHERE enabled=1) sessions" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$operators = $wpdb->get_results( "SELECT a.recorded_by_user_id,MAX(a.recorder_name) recorder_name,MAX(a.recorder_code) recorder_code,COUNT(*) total,MAX(a.created_at) last_at FROM {$a} a INNER JOIN {$r} rx ON rx.id=a.registration_id AND rx.is_test=0 WHERE a.recorded_by_user_id>0 GROUP BY a.recorded_by_user_id ORDER BY total DESC LIMIT 8" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		// Aggregate each large fact table before joining. Joining registrations,
 		// participants and attendance directly multiplies intermediate rows and
 		// becomes prohibitively expensive on busy events.
-		$events = $wpdb->get_results( "SELECT e.id,e.title,e.enabled,e.status,COALESCE(r.registrations,0) registrations,COALESCE(p.participants,0) participants,COALESCE(a.attendances,0) attendances FROM {$e} e LEFT JOIN (SELECT event_id,COUNT(*) registrations FROM {$r} WHERE is_test=0 GROUP BY event_id) r ON r.event_id=e.id LEFT JOIN (SELECT px.event_id,COUNT(*) participants FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.status='active' GROUP BY px.event_id) p ON p.event_id=e.id LEFT JOIN (SELECT ax.event_id,COUNT(*) attendances FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success' GROUP BY ax.event_id) a ON a.event_id=e.id WHERE 1=1{$scope_e} ORDER BY e.id DESC LIMIT 8" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$events = $wpdb->get_results( "SELECT e.id,e.title,e.enabled,e.status,COALESCE(r.registrations,0) registrations,COALESCE(p.participants,0) participants,COALESCE(a.attendances,0) attendances FROM {$e} e LEFT JOIN (SELECT event_id,COUNT(*) registrations FROM {$r} WHERE is_test=0 GROUP BY event_id) r ON r.event_id=e.id LEFT JOIN (SELECT px.event_id,COUNT(*) participants FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.status='active' GROUP BY px.event_id) p ON p.event_id=e.id LEFT JOIN (SELECT ax.event_id,COUNT(*) attendances FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success' GROUP BY ax.event_id) a ON a.event_id=e.id ORDER BY e.id DESC LIMIT 8" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$attendance_rate = ! empty( $stats->participants ) ? min( 100, round( ( (int) $stats->attended_people / (int) $stats->participants ) * 100, 1 ) ) : 0;
 		$sms_table = ECM_DB::table( 'sms' );
-		$sms_stats = $wpdb->get_row( "SELECT COUNT(*) total,SUM(q.status='accepted') accepted,SUM(q.status='failed') failed,SUM(q.status IN ('queued','retry_wait')) pending FROM {$sms_table} q LEFT JOIN {$r} rx ON rx.id=q.registration_id WHERE (q.registration_id=0 OR rx.is_test=0){$scope_q}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$sms_stats = $wpdb->get_row( "SELECT COUNT(*) total,SUM(q.status='accepted') accepted,SUM(q.status='failed') failed,SUM(q.status IN ('queued','retry_wait')) pending FROM {$sms_table} q LEFT JOIN {$r} rx ON rx.id=q.registration_id WHERE q.registration_id=0 OR rx.is_test=0" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$absent_people = max( 0, (int) $stats->participants - (int) $stats->attended_people );
 		ob_start();
 		?>
@@ -152,7 +138,7 @@ final class ECM_Reports {
 		ob_start();
 		?>
 		<section class="ecm-report-section"><div class="ecm-report-section__head"><div><h2>گزارش ثبت حضور</h2><p>هر سطر یک ثبت حضور واقعی است؛ حداکثر ۳۰۰ رکورد اخیر در جدول نمایش داده می‌شود.</p></div><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( $export ); ?>">خروجی CSV فیلترشده</a></div>
-		<form class="ecm-report-filter-v2" method="get" action="<?php echo esc_url( self::url( 'attendance', array(), $admin ) ); ?>"><?php self::hidden_context( 'attendance', $admin ); ?><label>جست‌وجو<input type="search" name="ecm_search" value="<?php echo esc_attr( $filters['search'] ); ?>" placeholder="نام، تلفن، اپراتور"></label><label>نوبت<select name="ecm_session"><option value="0">همه</option><?php foreach ( $sessions as $session ) : ?><option value="<?php echo esc_attr( $session->id ); ?>" <?php selected( $filters['session'], (int) $session->id ); ?>><?php echo esc_html( $session->title ); ?></option><?php endforeach; ?></select></label><label>از تاریخ<input type="date" name="ecm_from" value="<?php echo esc_attr( $filters['from'] ); ?>"></label><label>تا تاریخ<input type="date" name="ecm_to" value="<?php echo esc_attr( $filters['to'] ); ?>"></label><button class="ecm-button ecm-button--primary">اعمال</button></form>
+		<form class="ecm-report-filter-v2" method="get" action="<?php echo esc_url( self::url( 'attendance', array(), $admin ) ); ?>"><?php self::hidden_context( 'attendance', $admin ); ?><label>جست‌وجو<input type="search" name="ecm_search" value="<?php echo esc_attr( $filters['search'] ); ?>" placeholder="نام، تلفن، اپراتور"></label><label>رویداد<select name="ecm_event"><option value="0">همه</option><?php foreach ( $events as $event ) : ?><option value="<?php echo esc_attr( $event->id ); ?>" <?php selected( $filters['event'], (int) $event->id ); ?>><?php echo esc_html( $event->title ); ?></option><?php endforeach; ?></select></label><label>نوبت<select name="ecm_session"><option value="0">همه</option><?php foreach ( $sessions as $session ) : ?><option value="<?php echo esc_attr( $session->id ); ?>" <?php selected( $filters['session'], (int) $session->id ); ?>><?php echo esc_html( $session->title ); ?></option><?php endforeach; ?></select></label><label>از تاریخ<input type="date" name="ecm_from" value="<?php echo esc_attr( $filters['from'] ); ?>"></label><label>تا تاریخ<input type="date" name="ecm_to" value="<?php echo esc_attr( $filters['to'] ); ?>"></label><button class="ecm-button ecm-button--primary">اعمال</button></form>
 		<div class="ecm-table-scroll"><table class="ecm-report-table ecm-attendance-report"><thead><tr><th>شخص</th><th>نوع</th><th>رویداد / نوبت</th><th>زمان</th><th>ثبت‌کننده</th><th>روش</th><th>دستگاه</th></tr></thead><tbody><?php if ( ! $rows ) : ?><tr><td colspan="7">رکوردی مطابق فیلتر وجود ندارد.</td></tr><?php endif; ?><?php foreach ( $rows as $row ) : ?><tr><td><a class="ecm-report-person-link" href="<?php echo esc_url( self::url( 'person', array( 'ecm_id' => (int) $row->person_id ), $admin ) ); ?>"><strong><?php echo esc_html( $row->full_name ?: 'بدون نام' ); ?></strong><small><?php echo esc_html( $row->normalized_phone ?: '—' ); ?></small></a></td><td><span class="ecm-badge"><?php echo esc_html( 'guest' === $row->participant_type ? 'مهمان' : 'معرف' ); ?></span></td><td><?php echo esc_html( ( $row->event_title ?: 'رویداد قدیمی' ) . ' · ' . ( $row->session_title ?: 'نوبت قدیمی' ) ); ?></td><td><?php echo esc_html( ECM_Utils::utc_to_local( $row->created_at, 'Y/m/d H:i:s' ) ); ?></td><td><?php echo self::operator_link( $row, $admin ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td><td><?php echo esc_html( self::method_label( $row->method ) ); ?></td><td><?php echo esc_html( $row->device_label ?: '—' ); ?></td></tr><?php endforeach; ?></tbody></table></div></section>
 		<?php
 		return (string) ob_get_clean();
@@ -171,7 +157,7 @@ final class ECM_Reports {
 		ob_start(); ?>
 		<section class="ecm-report-section"><div class="ecm-report-section__head"><div><h2>گزارش جامع پیامک</h2><p>درخواست، قالب، مسیر ارسال، پاسخ درگاه و زمان‌ها؛ جدول حداکثر ۳۰۰ رکورد اخیر فیلترشده را نمایش می‌دهد.</p></div><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( $export ); ?>">خروجی CSV فیلترشده</a></div>
 		<form class="ecm-report-filter-v2 ecm-report-filter-v2--sms" method="get" action="<?php echo esc_url( self::url( 'sms', array(), $admin ) ); ?>"><?php self::hidden_context( 'sms', $admin ); ?>
-		<label>جست‌وجو<input type="search" name="ecm_search" value="<?php echo esc_attr( $filters['search'] ); ?>" placeholder="نام، گیرنده، پیام، شناسه یا خطا"></label><label>نوبت<select name="ecm_session"><option value="0">همه</option><?php foreach ( $sessions as $session ) : ?><option value="<?php echo esc_attr( $session->id ); ?>" <?php selected( $filters['session'], (int) $session->id ); ?>><?php echo esc_html( $session->title ); ?></option><?php endforeach; ?></select></label>
+		<label>جست‌وجو<input type="search" name="ecm_search" value="<?php echo esc_attr( $filters['search'] ); ?>" placeholder="نام، گیرنده، پیام، شناسه یا خطا"></label><label>رویداد<select name="ecm_event"><option value="0">همه</option><?php foreach ( $events as $event ) : ?><option value="<?php echo esc_attr( $event->id ); ?>" <?php selected( $filters['event'], (int) $event->id ); ?>><?php echo esc_html( $event->title ); ?></option><?php endforeach; ?></select></label><label>نوبت<select name="ecm_session"><option value="0">همه</option><?php foreach ( $sessions as $session ) : ?><option value="<?php echo esc_attr( $session->id ); ?>" <?php selected( $filters['session'], (int) $session->id ); ?>><?php echo esc_html( $session->title ); ?></option><?php endforeach; ?></select></label>
 		<label>نوع اعلان<select name="ecm_notification"><option value="">همه</option><?php foreach ( ECM_SMS::states() as $key => $label ) : ?><option value="<?php echo esc_attr( $key ); ?>" <?php selected( $filters['notification'], $key ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?><option value="otp_recovery" <?php selected( $filters['notification'], 'otp_recovery' ); ?>>کد تأیید بازیابی</option></select></label><label>وضعیت<select name="ecm_status"><option value="">همه</option><?php foreach ( $statuses as $key => $label ) : ?><option value="<?php echo esc_attr( $key ); ?>" <?php selected( $filters['status'], $key ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select></label><label>درگاه<select name="ecm_transport"><option value="">همه</option><?php foreach ( $transports as $transport ) : ?><option value="<?php echo esc_attr( $transport ); ?>" <?php selected( $filters['transport'], $transport ); ?>><?php echo esc_html( $transport ); ?></option><?php endforeach; ?></select></label><label>مخاطب<select name="ecm_participant_type"><option value="">همه</option><option value="primary" <?php selected( $filters['participant_type'], 'primary' ); ?>>معرف</option><option value="guest" <?php selected( $filters['participant_type'], 'guest' ); ?>>مهمان</option></select></label><label>نوع ارسال<select name="ecm_sending_type"><option value="">همه</option><option value="webservice" <?php selected( $filters['sending_type'], 'webservice' ); ?>>متن آزاد</option><option value="pattern" <?php selected( $filters['sending_type'], 'pattern' ); ?>>پترن</option></select></label><label>از تاریخ<input type="date" name="ecm_from" value="<?php echo esc_attr( $filters['from'] ); ?>"></label><label>تا تاریخ<input type="date" name="ecm_to" value="<?php echo esc_attr( $filters['to'] ); ?>"></label><button class="ecm-button ecm-button--primary">اعمال فیلتر</button><a class="ecm-button" href="<?php echo esc_url( self::url( 'sms', array(), $admin ) ); ?>">پاک‌کردن</a></form>
 		<div class="ecm-table-scroll"><table class="ecm-report-table ecm-sms-report-table"><thead><tr><th>ID / شخص</th><th>رویداد / نوبت</th><th>اعلان</th><th>گیرنده</th><th>نوع / پترن</th><th>پیام / پارامترها</th><th>درگاه</th><th>وضعیت</th><th>پاسخ</th><th>تلاش</th><th>زمان‌ها</th></tr></thead><tbody><?php if ( ! $rows ) : ?><tr class="ecm-report-empty"><td colspan="11">رکوردی مطابق فیلتر وجود ندارد.</td></tr><?php endif; ?><?php foreach ( $rows as $row ) : $payload = json_decode( (string) $row->payload, true ); $payload = is_array( $payload ) ? $payload : array(); $sending_type = sanitize_key( (string) ( $payload['sending_type'] ?? ( ! empty( $payload['code'] ) ? 'pattern' : 'webservice' ) ) ); $pattern = sanitize_text_field( (string) ( $payload['code'] ?? '' ) ); $params = ! empty( $payload['params'] ) && is_array( $payload['params'] ) ? wp_json_encode( $payload['params'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) : ''; ?>
 		<tr><td data-label="ID / شخص"><strong>#<?php echo esc_html( $row->id ); ?></strong><?php if ( $row->person_id ) : ?><br><a href="<?php echo esc_url( self::url( 'person', array( 'ecm_id' => (int) $row->person_id ), $admin ) ); ?>"><?php echo esc_html( $row->full_name ?: 'بدون نام' ); ?></a><?php endif; ?><br><span class="ecm-badge"><?php echo esc_html( 'guest' === $row->participant_type ? 'مهمان' : ( $row->participant_id ? 'معرف' : 'سیستمی' ) ); ?></span></td><td data-label="رویداد / نوبت"><?php echo esc_html( $row->event_title ?: '—' ); ?><?php if ( $row->session_title ) : ?><br><small><?php echo esc_html( $row->session_title ); ?></small><?php endif; ?></td><td data-label="اعلان"><?php echo esc_html( ECM_SMS::notification_label( (string) $row->notification_type ) ); ?></td><td data-label="گیرنده"><bdi><?php echo esc_html( $row->recipient ); ?></bdi></td><td data-label="نوع / پترن"><strong><?php echo esc_html( 'pattern' === $sending_type ? 'پترن' : 'متن آزاد' ); ?></strong><?php if ( $pattern ) : ?><br><code><?php echo esc_html( $pattern ); ?></code><?php endif; ?></td><td data-label="پیام / پارامترها" class="ecm-sms-message-preview"><?php echo nl2br( esc_html( $row->message ?: $params ?: '—' ) ); ?></td><td data-label="درگاه"><?php echo esc_html( $row->transport ?: '—' ); ?></td><td data-label="وضعیت"><span class="ecm-badge ecm-badge--<?php echo esc_attr( $row->status ); ?>"><?php echo esc_html( $statuses[ $row->status ] ?? $row->status ); ?></span></td><td data-label="پاسخ"><bdi><?php echo esc_html( $row->http_code ? 'HTTP ' . $row->http_code : '—' ); ?></bdi><br><small><?php echo esc_html( $row->provider_id ?: $row->error_code ?: '—' ); ?></small></td><td data-label="تلاش"><?php echo esc_html( number_format_i18n( (int) $row->attempts ) ); ?></td><td data-label="زمان‌ها"><small>ساخت: <?php echo esc_html( ECM_Utils::utc_to_local( $row->created_at, 'Y/m/d H:i:s' ) ); ?></small><?php if ( $row->accepted_at ) : ?><br><small>پذیرش: <?php echo esc_html( ECM_Utils::utc_to_local( $row->accepted_at, 'Y/m/d H:i:s' ) ); ?></small><?php endif; ?><?php if ( $row->delivered_at ) : ?><br><small>تحویل: <?php echo esc_html( ECM_Utils::utc_to_local( $row->delivered_at, 'Y/m/d H:i:s' ) ); ?></small><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div></section>
@@ -192,9 +178,7 @@ final class ECM_Reports {
 			$args = array( $like, $like, $like, $like );
 		}
 		$r = ECM_DB::table( 'registrations' );
-		$scope_r1 = ECM_Report_Scope::sql_in( 'r1.event_id' );
-		$scope_r2 = ECM_Report_Scope::sql_in( 'r2.event_id' );
-		$sql = "SELECT pe.*,COALESCE(px.participations,0) participations,COALESCE(px.guest_roles,0) guest_roles,COALESCE(ax.attendances,0) attendances,px.last_registration FROM {$pe} pe INNER JOIN (SELECT p1.person_id,COUNT(*) participations,SUM(p1.participant_type='guest') guest_roles,MAX(p1.created_at) last_registration FROM {$p} p1 INNER JOIN {$r} r1 ON r1.id=p1.registration_id AND r1.is_test=0{$scope_r1} GROUP BY p1.person_id) px ON px.person_id=pe.id LEFT JOIN (SELECT p2.person_id,COUNT(*) attendances FROM {$p} p2 INNER JOIN {$r} r2 ON r2.id=p2.registration_id AND r2.is_test=0{$scope_r2} INNER JOIN {$a} a2 ON a2.participant_id=p2.id AND a2.status='success' GROUP BY p2.person_id) ax ON ax.person_id=pe.id WHERE {$where} ORDER BY px.last_registration DESC LIMIT 300";
+		$sql = "SELECT pe.*,COALESCE(px.participations,0) participations,COALESCE(px.guest_roles,0) guest_roles,COALESCE(ax.attendances,0) attendances,px.last_registration FROM {$pe} pe INNER JOIN (SELECT p1.person_id,COUNT(*) participations,SUM(p1.participant_type='guest') guest_roles,MAX(p1.created_at) last_registration FROM {$p} p1 INNER JOIN {$r} r1 ON r1.id=p1.registration_id AND r1.is_test=0 GROUP BY p1.person_id) px ON px.person_id=pe.id LEFT JOIN (SELECT p2.person_id,COUNT(*) attendances FROM {$p} p2 INNER JOIN {$r} r2 ON r2.id=p2.registration_id AND r2.is_test=0 INNER JOIN {$a} a2 ON a2.participant_id=p2.id AND a2.status='success' GROUP BY p2.person_id) ax ON ax.person_id=pe.id WHERE {$where} ORDER BY px.last_registration DESC LIMIT 300";
 		$rows = $wpdb->get_results( $args ? $wpdb->prepare( $sql, $args ) : $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		ob_start();
 		?>
@@ -208,8 +192,7 @@ final class ECM_Reports {
 		$a = ECM_DB::table( 'attendance' );
 		$e = ECM_DB::table( 'event_definitions' );
 		$r = ECM_DB::table( 'registrations' );
-		$scope = ECM_Report_Scope::sql_in( 'a.event_id' );
-		$rows = $wpdb->get_results( "SELECT a.recorded_by_user_id,MAX(a.recorder_name) recorder_name,MAX(a.recorder_code) recorder_code,COUNT(*) total,COUNT(DISTINCT a.event_id) events,COUNT(DISTINCT a.session_id) sessions,MIN(a.created_at) first_at,MAX(a.created_at) last_at FROM {$a} a INNER JOIN {$r} r ON r.id=a.registration_id AND r.is_test=0 WHERE a.recorded_by_user_id>0{$scope} GROUP BY a.recorded_by_user_id ORDER BY total DESC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( "SELECT a.recorded_by_user_id,MAX(a.recorder_name) recorder_name,MAX(a.recorder_code) recorder_code,COUNT(*) total,COUNT(DISTINCT a.event_id) events,COUNT(DISTINCT a.session_id) sessions,MIN(a.created_at) first_at,MAX(a.created_at) last_at FROM {$a} a INNER JOIN {$r} r ON r.id=a.registration_id AND r.is_test=0 WHERE a.recorded_by_user_id>0 GROUP BY a.recorded_by_user_id ORDER BY total DESC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		ob_start();
 		?>
 		<section class="ecm-report-section"><div class="ecm-report-section__head"><div><h2>عملکرد اپراتورها</h2><p>آمار ثبت حضور بر اساس حساب ثبت‌کننده</p></div></div><div class="ecm-table-scroll"><table class="ecm-report-table"><thead><tr><th>اپراتور</th><th>کد</th><th>تعداد ثبت</th><th>رویداد</th><th>نوبت</th><th>اولین فعالیت</th><th>آخرین فعالیت</th></tr></thead><tbody><?php if ( ! $rows ) : ?><tr><td colspan="7">ثبت اپراتوری وجود ندارد.</td></tr><?php endif; ?><?php foreach ( $rows as $row ) : $user = get_userdata( (int) $row->recorded_by_user_id ); $name = $user ? $user->display_name : ( $row->recorder_name ?: 'اپراتور حذف‌شده' ); ?><tr><td><a href="<?php echo esc_url( self::url( 'operator', array( 'ecm_id' => (int) $row->recorded_by_user_id ), $admin ) ); ?>"><?php echo esc_html( $name ); ?></a></td><td><?php echo esc_html( $row->recorder_code ?: 'U' . (int) $row->recorded_by_user_id ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->total ) ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->events ) ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->sessions ) ); ?></td><td><?php echo esc_html( ECM_Utils::utc_to_local( $row->first_at ) ); ?></td><td><?php echo esc_html( ECM_Utils::utc_to_local( $row->last_at ) ); ?></td></tr><?php endforeach; ?></tbody></table></div></section>
@@ -224,8 +207,7 @@ final class ECM_Reports {
 		$p = ECM_DB::table( 'participants' );
 		$a = ECM_DB::table( 'attendance' );
 		$s = ECM_DB::table( 'sessions' );
-		$scope = ECM_Report_Scope::sql_in( 'e.id' );
-		$rows = $wpdb->get_results( "SELECT e.*,COALESCE(r.registrations,0) registrations,COALESCE(p.participants,0) participants,COALESCE(p.guests,0) guests,COALESCE(a.attendances,0) attendances,COALESCE(s.sessions,0) sessions FROM {$e} e LEFT JOIN (SELECT event_id,COUNT(*) registrations FROM {$r} WHERE is_test=0 GROUP BY event_id) r ON r.event_id=e.id LEFT JOIN (SELECT px.event_id,COUNT(*) participants,SUM(px.participant_type='guest') guests FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.status='active' GROUP BY px.event_id) p ON p.event_id=e.id LEFT JOIN (SELECT ax.event_id,COUNT(*) attendances FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success' GROUP BY ax.event_id) a ON a.event_id=e.id LEFT JOIN (SELECT event_id,COUNT(*) sessions FROM {$s} GROUP BY event_id) s ON s.event_id=e.id WHERE 1=1{$scope} ORDER BY e.id DESC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( "SELECT e.*,COALESCE(r.registrations,0) registrations,COALESCE(p.participants,0) participants,COALESCE(p.guests,0) guests,COALESCE(a.attendances,0) attendances,COALESCE(s.sessions,0) sessions FROM {$e} e LEFT JOIN (SELECT event_id,COUNT(*) registrations FROM {$r} WHERE is_test=0 GROUP BY event_id) r ON r.event_id=e.id LEFT JOIN (SELECT px.event_id,COUNT(*) participants,SUM(px.participant_type='guest') guests FROM {$p} px INNER JOIN {$r} rx ON rx.id=px.registration_id AND rx.is_test=0 WHERE px.status='active' GROUP BY px.event_id) p ON p.event_id=e.id LEFT JOIN (SELECT ax.event_id,COUNT(*) attendances FROM {$a} ax INNER JOIN {$r} rx ON rx.id=ax.registration_id AND rx.is_test=0 WHERE ax.status='success' GROUP BY ax.event_id) a ON a.event_id=e.id LEFT JOIN (SELECT event_id,COUNT(*) sessions FROM {$s} GROUP BY event_id) s ON s.event_id=e.id ORDER BY e.id DESC" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		ob_start();
 		?>
 		<section class="ecm-report-section"><div class="ecm-report-section__head"><div><h2>گزارش تفکیکی رویدادها</h2><p>برای جزئیات، روی نام هر رویداد بزنید.</p></div></div><div class="ecm-table-scroll"><table class="ecm-report-table"><thead><tr><th>رویداد</th><th>وضعیت</th><th>ثبت‌نام</th><th>شرکت‌کننده</th><th>مهمان</th><th>نوبت</th><th>حضور</th></tr></thead><tbody><?php foreach ( $rows as $row ) : ?><tr><td><a href="<?php echo esc_url( self::url( 'event', array( 'ecm_id' => (int) $row->id ), $admin ) ); ?>"><strong><?php echo esc_html( $row->title ); ?></strong></a></td><td><span class="ecm-badge"><?php echo esc_html( ! empty( $row->enabled ) ? $row->status : 'غیرفعال' ); ?></span></td><td><?php echo esc_html( number_format_i18n( (int) $row->registrations ) ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->participants ) ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->guests ) ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->sessions ) ); ?></td><td><?php echo esc_html( number_format_i18n( (int) $row->attendances ) ); ?></td></tr><?php endforeach; ?></tbody></table></div></section>
@@ -310,7 +292,7 @@ final class ECM_Reports {
 
 	private static function sms_filters(): array {
 		return array(
-			'event' => count( ECM_Report_Scope::event_ids() ) === 1 ? ECM_Report_Scope::event_ids()[0] : 0, 'events' => ECM_Report_Scope::event_ids(), 'session' => absint( $_GET['ecm_session'] ?? 0 ),
+			'event' => absint( $_GET['ecm_event'] ?? 0 ), 'session' => absint( $_GET['ecm_session'] ?? 0 ),
 			'notification' => sanitize_key( wp_unslash( $_GET['ecm_notification'] ?? '' ) ), 'status' => sanitize_key( wp_unslash( $_GET['ecm_status'] ?? '' ) ),
 			'transport' => sanitize_key( wp_unslash( $_GET['ecm_transport'] ?? '' ) ), 'participant_type' => sanitize_key( wp_unslash( $_GET['ecm_participant_type'] ?? '' ) ),
 			'sending_type' => sanitize_key( wp_unslash( $_GET['ecm_sending_type'] ?? '' ) ), 'from' => sanitize_text_field( wp_unslash( $_GET['ecm_from'] ?? '' ) ),
@@ -322,7 +304,7 @@ final class ECM_Reports {
 		global $wpdb; $where = array( '1=1' ); $args = array();
 		$registrations = ECM_DB::table( 'registrations' );
 		$where[] = "(q.registration_id=0 OR EXISTS (SELECT 1 FROM {$registrations} rt WHERE rt.id=q.registration_id AND rt.is_test=0))";
-		if ( ! empty( $filters['events'] ) ) $where[] = 'q.event_id IN (' . implode( ',', array_map( 'absint', $filters['events'] ) ) . ')';
+		if ( $filters['event'] ) { $where[] = 'q.event_id=%d'; $args[] = $filters['event']; }
 		if ( $filters['session'] ) { $where[] = 'q.session_id=%d'; $args[] = $filters['session']; }
 		if ( $filters['notification'] ) { $where[] = 'q.notification_type=%s'; $args[] = $filters['notification']; }
 		if ( $filters['status'] ) { $where[] = 'q.status=%s'; $args[] = $filters['status']; }
@@ -336,7 +318,7 @@ final class ECM_Reports {
 	}
 
 	private static function sms_query( array $filters ): array {
-		return array_filter( array( 'ecm_events' => ECM_Report_Scope::query_args()['ecm_events'], 'ecm_session' => $filters['session'], 'ecm_notification' => $filters['notification'], 'ecm_status' => $filters['status'], 'ecm_transport' => $filters['transport'], 'ecm_participant_type' => $filters['participant_type'], 'ecm_sending_type' => $filters['sending_type'], 'ecm_from' => $filters['from'], 'ecm_to' => $filters['to'], 'ecm_search' => $filters['search'] ) );
+		return array_filter( array( 'ecm_event' => $filters['event'], 'ecm_session' => $filters['session'], 'ecm_notification' => $filters['notification'], 'ecm_status' => $filters['status'], 'ecm_transport' => $filters['transport'], 'ecm_participant_type' => $filters['participant_type'], 'ecm_sending_type' => $filters['sending_type'], 'ecm_from' => $filters['from'], 'ecm_to' => $filters['to'], 'ecm_search' => $filters['search'] ) );
 	}
 
 	public static function export_sms_csv(): void {
@@ -359,8 +341,7 @@ final class ECM_Reports {
 
 	private static function attendance_filters(): array {
 		return array(
-			'event'   => count( ECM_Report_Scope::event_ids() ) === 1 ? ECM_Report_Scope::event_ids()[0] : 0,
-			'events'  => ECM_Report_Scope::event_ids(),
+			'event'   => absint( $_GET['ecm_event'] ?? 0 ),
 			'session' => absint( $_GET['ecm_session'] ?? 0 ),
 			'from'    => isset( $_GET['ecm_from'] ) ? sanitize_text_field( wp_unslash( $_GET['ecm_from'] ) ) : '',
 			'to'      => isset( $_GET['ecm_to'] ) ? sanitize_text_field( wp_unslash( $_GET['ecm_to'] ) ) : '',
@@ -374,7 +355,7 @@ final class ECM_Reports {
 		$registrations = ECM_DB::table( 'registrations' );
 		$where[] = "EXISTS (SELECT 1 FROM {$registrations} rt WHERE rt.id=a.registration_id AND rt.is_test=0)";
 		$args = array();
-		if ( ! empty( $filters['events'] ) ) $where[] = 'a.event_id IN (' . implode( ',', array_map( 'absint', $filters['events'] ) ) . ')';
+		if ( $filters['event'] ) { $where[] = 'a.event_id=%d'; $args[] = $filters['event']; }
 		if ( $filters['session'] ) { $where[] = 'a.session_id=%d'; $args[] = $filters['session']; }
 		if ( $filters['from'] && ( $utc = ECM_Utils::local_to_utc( $filters['from'] . ' 00:00:00' ) ) ) { $where[] = 'a.created_at>=%s'; $args[] = $utc; }
 		if ( $filters['to'] && ( $utc = ECM_Utils::local_to_utc( $filters['to'] . ' 23:59:59' ) ) ) { $where[] = 'a.created_at<=%s'; $args[] = $utc; }
@@ -383,7 +364,7 @@ final class ECM_Reports {
 	}
 
 	private static function attendance_query( array $filters ): array {
-		return array_filter( array( 'ecm_events' => ECM_Report_Scope::query_args()['ecm_events'], 'ecm_session' => $filters['session'], 'ecm_from' => $filters['from'], 'ecm_to' => $filters['to'], 'ecm_search' => $filters['search'] ) );
+		return array_filter( array( 'ecm_event' => $filters['event'], 'ecm_session' => $filters['session'], 'ecm_from' => $filters['from'], 'ecm_to' => $filters['to'], 'ecm_search' => $filters['search'] ) );
 	}
 
 	public static function export_attendance_csv(): void {
@@ -415,7 +396,6 @@ final class ECM_Reports {
 	}
 
 	private static function hidden_context( string $view, bool $admin ): void {
-		echo ECM_Report_Scope::hidden_fields(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		if ( $admin ) echo '<input type="hidden" name="page" value="ecm-reports">';
 		else {
 			$pages = (array) get_option( 'ecm_pages', array() );

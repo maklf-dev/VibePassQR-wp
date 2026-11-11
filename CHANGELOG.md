@@ -1,73 +1,17 @@
-## 0.7.0-alpha.7 (Phase 8, hardening and staging test tools)
-
-- Add fail-closed InnoDB preflight for all nine tables touched by Workflow approval, before any transaction or issuance.
-- Include legacy attendance in the bulk import transaction preflight; reject missing/duplicate table metadata.
-- Tighten OTP network-wide throttling, preventing browser-cookie rotation from bypassing practical limits.
-- Set no-cache headers early for independently enabled workflow-tracking shortcodes.
-- Supply Phase 8 QA assertions, read-only WP-CLI staging inventory and optional Windows ZIP checker in a separate QA package.
-- No new schema, no Classic or ticket-token changes. **Staging-only, not production certified.**
-
-## 0.7.0-alpha.6 (Phase 7, analytics & staged bulk issuance)
-
-- Add a read-only analytics report builder with safe group/metric allowlists, independent aggregate queries, UTC date/hour buckets, multiple event filtering, bar/line/pie SVG rendering, and downloadable SVG/CSV.
-- Add event listing search and active/inactive/draft/archived filters without changing event persistence.
-- Add administrator-only, staging-flagged CSV/XLSX bulk card creation for Classic events with no required payment; encrypted preview, field and guest validation, 100-row cap, duplicate guards, InnoDB checks, transaction rollback, and no SMS.
-- No new database schema and no changes to Classic registration, QR/ticket, OTP, workflow issuance, or SMS core.
-- Mock-only QA: phase6 regression and phase7 smoke; real WordPress/MariaDB/HTTP/XLSX integration still required.
-
-## 0.7.0-alpha.5 (Phase 6, staging only)
-
-- Require a fresh SMS OTP before a **public** workflow draft is inserted; staged form payload is AES-256-GCM encrypted and expires after 5 minutes.
-- Add SMS-OTP recovery by phone without the original tracking code. A successful verified recovery rotates the 128-bit tracking secret and invalidates the old one.
-- Add protected owner edit of pre-approval form fields, including guests, with immutable primary mobile, schema fingerprint, revision locks and metadata-only audit.
-- Expand safe, standalone template placeholders with event, progress, summary, card link, editable-form link and keyed field/value tokens.
-- Add identity-level advisory lock for race-safe public enrollment; add recipient-based OTP throttling.
-- Add a workflow-only prefill helper JS; leave Classic UI, QR issuance, attendance and SMS core untouched.
-- All public workflow features remain disabled by default and staging-only. No schema DDL change.
-- Static/simulated QA only; real WordPress/MariaDB/HTTP/SMS tests are required before production.
-
-## 0.7.0-alpha.4 (Phase 5, staging only)
-
-- Added opt-in staging-only public four-step workflow front-end and `[ecm_flow]` shortcode.
-- Added HttpOnly session-bound public draft, agreement, private receipt and tracking journey.
-- Added cross-browser recovery with tracking secret, matching phone and independently enabled SMS OTP.
-- Added optional pre-approval workflow SMS status notifications using existing queue and worker; new states are off by default.
-- Added public workflow cache guard early in WordPress template routing.
-- Added customer correction loop with atomic state revision and audit entry.
-- Updated registration/event directory routing only for explicitly enabled custom workflow events.
-- No destructive schema migration; Classic card, attendance and SMS flows preserved.
-- Added mock QA checks; WordPress/MariaDB/HTTP/provider integration still required.
-
-## 0.7.0-alpha.3 (Workflow phase 4 — staging review and protected issuance)
-
-- Adds an admin review queue with state filters, reasoned reject/correction and secure image preview.
-- Adds a staging-only, guarded, atomic approval bridge to canonical registration, guest and QR tokens.
-- Adds a disabled-by-default tracking shortcode requiring both tracking secret and matching phone.
-- Keeps opted-in staging Custom events from bypassing review via the Classic public form.
-- Pins form-schema hashes at draft creation; existing Classic data/URLs remain unchanged.
-- See `docs/RELEASE-NOTES-0.7.0-alpha.3-FA.md` and QA report for staging flags and limitations.
-
-## 0.7.0-alpha.1 — 2026-11-09
-
-- Additive workflow schema (versions, instances, files) and audit relationship.
-- Default-off, per-event opt-in workflow domain layer with immutable version publishing.
-- Admin-only internal draft persistence and optimistic-concurrency protected stage change.
-- Deferred schema upgrade on privileged admin requests; no front-end DDL.
-- Workflow readiness in diagnostics; no public workflow routes activated.
-- Experimental only: no approval, receipt upload, OTP tracking or card-issuance integration yet.
-
 # Changelog
 
-## 0.6.7 — 2026-11-09
+## 0.6.6.2 — 2026-11-11
 
-- افزودن فیلتر مشترک رویداد در گزارش‌ها با پیش‌فرض جدیدترین رویداد فعال، انتخاب چند رویداد و گزینه همه
-- هماهنگی دامنه فیلتر و خروجی CSV برای گزارش‌های ثبت‌نام، حضور و پیامک؛ حفظ لینک‌های فیلتر قدیمی
-- اصلاح صفحه‌بندی گزارش ثبت‌نام با اندازه صفحه 25/50/100/250 و حفظ فیلتر در لینک‌ها
-- نمایش رابطه معرف و مهمان در گزارش با پیش‌واکشی دسته‌ای
-- ثبت علت فنی رد دسترسی کارت و لینک کوتاه با Trace محدود و بدون اطلاعات محرمانه
-- افزودن فواصل قابل تنظیم تلاش مجدد SMS و حفظ مقدار حداکثر تلاش قبلی در ارتقا
-- شورت‌کد اختیاری `[ecm_event_list]` بدون تغییر مسیر ثبت‌نام فعلی
-- بدون تغییر تخریبی در دیتابیس و بدون فعال‌سازی موتور ثبت‌نام چندمرحله‌ای (برنامه نسخه 0.7.0)
+- اصلاح رابط RTL فیلتر گزارش‌های ثبت‌نام: چک‌باکس‌ها، فهرست دوره‌ها، فیلدها و چیدمان واکنش‌گرا
+- یکسان‌سازی فرم فیلتر در نمایش عادی و جامع، بدون حذف انتخاب دوره و وضعیت هنگام تغییر حالت
+- شمارش همه ثبت‌نام‌ها به‌عنوان معرف، حتی اگر رکورد هویتی مربوط به نسخه‌های قدیمی ناقص باشد
+- افزودن هر مهمان فعال به‌عنوان سطر مستقل، با ارتباط معرف، موبایل و داده کارت
+- تطبیق کامل مبنای شمارش، فهرست صفحه‌بندی‌شده، CSV و چاپ/PDF از یک Query Scope واحد
+- اضافه‌کردن تعداد ردیف انتخابی ۵۰، ۱۰۰، ۲۵۰، ۵۰۰ و نمایش همه تا ۲۵۰۰ نفر
+- نمایش تعداد واقعی افراد، تعداد معرف و مهمان، بازه شماره سطر و هشدار هویت‌های ناقص
+- بدون تغییر در مسیرهای ثبت‌نام، بازیابی، کارت، QR، حضور، پیامک، دسترسی رویداد و ثبت‌نام تستی
+- بدون Migration یا تغییر Schema؛ ارتقای مستقیم از 0.6.6 و 0.6.6.1 بدون اجرای بازسازی دیتابیس
+
 
 ## 0.6.6 — 2026-11-06
 
@@ -346,10 +290,3 @@
 ## 0.1.0
 
 Initial registration, card, recovery, attendance and reporting plugin.
-
-## 0.7.0-alpha.2 (Workflow phase 3 — Staging only)
-- Admin-only step editor with versioned safe HTML/scoped CSS and four-step preview.
-- Admin test progression: form -> immutable agreement acceptance -> private receipt -> under review.
-- Additive audit metadata; no registration, ticket, QR, attendance or SMS bridge activated.
-- Workflow remains off by default; public registration stays classic even on custom workflow events.
-- See `docs/RELEASE-NOTES-0.7.0-alpha.2-FA.md` and QA report.

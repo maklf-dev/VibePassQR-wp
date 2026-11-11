@@ -113,6 +113,9 @@ final class ECM_OTP {
 		$event = $row ? ECM_Events::event( (int) $row->event_id ) : null;
 		self::$activity_event_id = $event ? (int) $event->id : 0;
 		$config = ECM_Events::config( $event );
+		if ( $row && $event && ! ECM_Events::allows( $event, 'recovery' ) ) {
+			self::error( 'event_unavailable', 'بازیابی این رویداد غیرفعال است.', 403 );
+		}
 		if ( ! $row || ! $event || 'active' !== (string) $row->status || ! hash_equals( (string) $row->browser_hash, self::browser_hash() ) ) {
 			self::error( 'invalid_challenge', (string) $config['recovery_otp_expired_message'], 400 );
 		}
@@ -158,6 +161,9 @@ final class ECM_OTP {
 		$event = $row ? ECM_Events::event( (int) $row->event_id ) : null;
 		self::$activity_event_id = $event ? (int) $event->id : 0;
 		$config = ECM_Events::config( $event );
+		if ( $row && $event && ! ECM_Events::allows( $event, 'recovery' ) ) {
+			self::error( 'event_unavailable', 'بازیابی این رویداد غیرفعال است.', 403 );
+		}
 		if ( ! $row || ! $event || 'active' !== (string) $row->status || ! hash_equals( (string) $row->browser_hash, self::browser_hash() ) ) {
 			self::error( 'invalid_challenge', (string) $config['recovery_otp_expired_message'], 400 );
 		}
@@ -219,7 +225,7 @@ final class ECM_OTP {
 		$phone = ECM_Events::normalize_phone( $identifier );
 		if ( $phone ) {
 			$phone_hash = hash_hmac( 'sha256', $phone, wp_salt( 'auth' ) );
-			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT p.id,p.registration_id,pe.normalized_phone FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE p.event_id=%d AND pe.phone_hash=%s AND p.status='active' AND r.payment_status IN ('paid','not_required','offline_confirmed') ORDER BY p.id DESC LIMIT 3", $event_id, $phone_hash ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT p.id,p.registration_id,pe.normalized_phone FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE p.event_id=%d AND pe.phone_hash=%s AND p.status='active' AND r.is_test=0 AND r.payment_status IN ('paid','not_required','offline_confirmed') ORDER BY p.id DESC LIMIT 3", $event_id, $phone_hash ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			if ( $rows ) {
 				return array( 'recipient' => ECM_SMS::phone( (string) $rows[0]->normalized_phone ), 'registration_id' => (int) $rows[0]->registration_id, 'participant_id' => 1 === count( $rows ) ? (int) $rows[0]->id : 0, 'ambiguous' => 1 < count( $rows ) );
 			}
@@ -229,14 +235,14 @@ final class ECM_OTP {
 		if ( ! $tracking ) {
 			return array();
 		}
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT p.id,p.registration_id,pe.normalized_phone FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE p.event_id=%d AND (p.public_id=%s OR (p.participant_type='primary' AND r.public_id=%s)) AND p.status='active' AND r.payment_status IN ('paid','not_required','offline_confirmed') LIMIT 1", $event_id, $tracking, $tracking ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row( $wpdb->prepare( "SELECT p.id,p.registration_id,pe.normalized_phone FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE p.event_id=%d AND (p.public_id=%s OR (p.participant_type='primary' AND r.public_id=%s)) AND p.status='active' AND r.is_test=0 AND r.payment_status IN ('paid','not_required','offline_confirmed') LIMIT 1", $event_id, $tracking, $tracking ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		return $row ? array( 'recipient' => ECM_SMS::phone( (string) $row->normalized_phone ), 'registration_id' => (int) $row->registration_id, 'participant_id' => (int) $row->id, 'ambiguous' => false ) : array();
 	}
 
 	private static function posted_event(): object {
 		$event_id = absint( $_POST['event_id'] ?? 0 );
 		$event = ECM_Events::event( $event_id ?: ECM_Events::default_event_id() );
-		if ( ! $event || ! ECM_Events::is_publicly_active( $event ) ) {
+		if ( ! $event || ! ECM_Events::allows( $event, 'recovery' ) ) {
 			self::error( 'event_unavailable', 'رویداد در دسترس نیست.', 404 );
 		}
 		return $event;

@@ -17,7 +17,7 @@ final class ECM_Operator {
 		$events = array_values(
 			array_filter(
 				ECM_Events::all( 'published' ),
-				static fn( object $event ): bool => ! empty( $event->enabled ) && ECM_Events::can_record_attendance( (int) $event->id, (int) $user->ID )
+				static fn( object $event ): bool => ECM_Events::allows( $event, 'attendance' ) && ECM_Events::can_record_attendance( (int) $event->id, (int) $user->ID )
 			)
 		);
 		$recent = array();
@@ -166,7 +166,7 @@ final class ECM_Operator {
 		}
 		$event_id = absint( $_POST['event_id'] ?? 0 );
 		$event    = ECM_Events::event( $event_id );
-		if ( ! ECM_Events::is_publicly_active( $event ) || ! ECM_Events::can_record_attendance( $event_id ) ) {
+		if ( ! ECM_Events::allows( $event, 'attendance' ) || ! ECM_Events::can_record_attendance( $event_id ) ) {
 			return new WP_Error( 'forbidden_event', 'برای ثبت حضور این رویداد دسترسی ندارید.', array( 'status' => 403 ) );
 		}
 		$input    = sanitize_text_field( (string) wp_unslash( $_POST['token'] ?? '' ) );

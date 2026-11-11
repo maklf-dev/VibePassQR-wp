@@ -99,3 +99,91 @@ body.ecm-canvas .ecm-session-time span{background:#15181f;border-color:var(--ecm
 .ecm-otp-feedback__actions{margin-top:12px}.ecm-otp-feedback__actions .ecm-button{color:var(--ecm-text)!important}
 @media(max-width:600px){body.ecm-canvas .ecm-shell{width:calc(100% - 16px);border-radius:20px}body.ecm-canvas .ecm-phone-bar{min-height:44px;padding:7px 16px}body.ecm-canvas .ecm-hero{padding:22px 18px 17px}body.ecm-canvas .ecm-content{padding:20px 18px 26px}.ecm-otp-recovery{padding:17px;border-radius:16px}.ecm-otp-head{display:block}.ecm-otp-head .ecm-button{margin-top:8px!important}.ecm-otp-code input{letter-spacing:.25em}.ecm-guest-row>div:last-child{grid-template-columns:1fr}.ecm-field-grid{gap:14px}}
 @supports(-webkit-touch-callout:none){body.ecm-canvas .ecm-field input,body.ecm-canvas .ecm-field select,body.ecm-canvas .ecm-field textarea,.ecm-otp-code input{font-size:16px}.ecm-shell{transform:translateZ(0)}.ecm-button{-webkit-user-select:none;user-select:none}}
+
+
+/* 0.6.6.2 - Reports filter layout, isolated from legacy generic label/input rules. */
+.ecm-report .ecm-report-filter--participants{
+  display:flex;flex-direction:column;align-items:stretch;gap:16px;
+  padding:20px;margin:20px 0;border:1px solid #d1dee9;border-radius:16px;
+  background:#f5f9fc;min-width:0;max-width:100%;box-sizing:border-box;
+}
+.ecm-report .ecm-report-filter--participants *{box-sizing:border-box}
+.ecm-report .ecm-report-filter--participants .ecm-report-filter__heading{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+.ecm-report .ecm-report-filter--participants .ecm-report-switch{
+  display:flex!important;align-items:center;gap:11px;flex:0 1 auto;width:auto;max-width:100%;
+  padding:10px 14px;background:#e8f0fd;border:1px solid #d1dff2;border-radius:11px;
+  cursor:pointer;line-height:1.5;
+}
+.ecm-report .ecm-report-filter--participants .ecm-report-switch span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ecm-report .ecm-report-filter--participants .ecm-report-switch strong{font-size:14px}
+.ecm-report .ecm-report-filter--participants .ecm-report-switch small{font-size:12px;font-weight:400;color:#4e617b}
+.ecm-report .ecm-report-filter--participants .ecm-report-filter__hint{max-width:400px;color:#506783;font-size:12px}
+.ecm-report .ecm-report-filter--participants .ecm-event-checklist{
+  display:block;width:100%;max-width:none;flex:0 0 auto;padding:0;
+  background:#fff;border:1px solid #d1dfe9;border-radius:12px;
+}
+.ecm-report .ecm-report-filter--participants .ecm-event-checklist summary{
+  margin:0;padding:13px 16px;cursor:pointer;line-height:1.7;font-weight:800;
+}
+.ecm-report .ecm-report-filter--participants .ecm-event-checklist .ecm-filter-count{
+  display:inline-block;margin-inline-start:9px;padding:2px 9px;border-radius:99px;
+  background:#eaf2fc;color:#27517f;font-size:12px;font-weight:600;
+}
+.ecm-report .ecm-report-filter--participants .ecm-event-checklist__body{
+  padding:4px 16px 14px;border-top:1px solid #e9eef4;
+}
+.ecm-report .ecm-report-filter--participants .ecm-check-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:10px;
+  align-items:stretch;width:100%;max-height:260px;overflow:auto;padding:12px 0;
+}
+.ecm-report .ecm-report-filter--participants .ecm-event-check-option{
+  display:flex!important;flex-direction:row;align-items:center;justify-content:flex-start;
+  gap:9px;min-width:0;width:100%;padding:10px 12px;
+  border:1px solid #dce6ef;border-radius:10px;background:#f7fafc;
+  font-weight:600;font-size:13px;line-height:1.65;cursor:pointer;
+}
+.ecm-report .ecm-report-filter--participants .ecm-event-check-option span{
+  display:block;min-width:0;overflow-wrap:anywhere;text-align:right;
+}
+.ecm-report .ecm-report-filter--participants input[type="checkbox"]{
+  display:inline-block!important;width:18px!important;min-width:18px!important;max-width:18px!important;
+  height:18px!important;min-height:18px!important;flex:0 0 18px!important;
+  padding:0!important;margin:0!important;vertical-align:middle;
+}
+.ecm-report .ecm-report-filter--participants .ecm-event-checklist__body p{
+  font-size:12px;font-weight:400;color:#506783;margin:2px 0;
+}
+.ecm-report .ecm-report-filter--participants .ecm-report-filter__fields{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:end;
+}
+.ecm-report .ecm-report-filter--participants label.ecm-report-field{
+  display:flex;flex-direction:column;align-items:stretch;justify-content:end;
+  gap:7px;min-width:0;margin:0;font-weight:700;font-size:13px;
+}
+.ecm-report .ecm-report-filter--participants .ecm-report-field input:not([type="checkbox"]),
+.ecm-report .ecm-report-filter--participants .ecm-report-field select{
+  display:block;width:100%;max-width:100%;min-width:0;min-height:42px;
+  padding:7px 10px;margin:0;border:1px solid #c5d5e4;border-radius:9px;background:#fff;
+  color:#102e50;font-size:13px;font-weight:500;
+}
+.ecm-report .ecm-report-filter--participants .ecm-report-filter__actions{
+  display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap;
+}
+.ecm-report .ecm-report-filter--participants .ecm-report-filter__actions .button{
+  width:auto;min-width:140px;min-height:42px;margin:0;
+}
+.ecm-report-count-note{margin:10px 0 16px;font-size:13px;color:#334a67;line-height:1.9}
+.ecm-report-integrity-note{display:inline;padding:3px 7px;background:#fff4d6;border-radius:6px;color:#805513}
+@media(max-width:1100px){.ecm-report .ecm-report-filter--participants .ecm-report-filter__fields{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){
+  .ecm-report .ecm-report-filter--participants{padding:13px;gap:12px}
+  .ecm-report .ecm-report-filter--participants .ecm-report-filter__fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .ecm-report .ecm-report-filter--participants .ecm-check-grid{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .ecm-report .ecm-report-filter--participants .ecm-report-filter__fields{grid-template-columns:1fr}
+  .ecm-report .ecm-report-filter--participants .ecm-report-filter__actions{display:grid;grid-template-columns:1fr}
+  .ecm-report .ecm-report-filter--participants .ecm-report-filter__actions .button{width:100%}
+}

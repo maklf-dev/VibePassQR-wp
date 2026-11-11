@@ -35,21 +35,21 @@ final class ECM_Card_Document {
 		$participant_id = absint( $_GET['participant_id'] ?? 0 );
 		check_admin_referer( 'ecm_print_cards_' . $id );
 		$registration = ECM_DB::registration( $id );
-		$event = $registration ? ECM_Events::registration_event( $registration ) : null;
-		if ( ! ECM_Utils::registration_is_complete( $registration ) ) { ECM_Activity::mark_access_denied( 'registration_incomplete', isset( $event ) && $event ? (int) $event->id : 0, $id ); wp_die( 'کارت معتبر نیست.', 403 ); }
+		if ( ! ECM_Utils::registration_is_complete( $registration ) ) wp_die( 'کارت معتبر نیست.', 403 );
 		$host_grant = ECM_Utils::has_card_grant( $registration );
 		$requested = $participant_id ? ECM_DB::participant_identity( $participant_id ) : null;
 		$guest_grant = $requested && (int) $requested->registration_id === $id && ECM_Utils::has_participant_card_grant( $requested );
-		if ( ! $host_grant && ! $guest_grant ) { ECM_Activity::mark_access_denied( 'card_grant_missing', isset( $event ) && $event ? (int) $event->id : 0, $id ); wp_die( 'دسترسی به کارت منقضی شده است. کارت را دوباره بازیابی کنید.', 403 ); }
-		if ( ! ECM_Events::is_publicly_active( $event ) ) { ECM_Activity::mark_access_denied( 'event_inactive', isset( $event ) && $event ? (int) $event->id : 0, $id ); wp_die( 'این رویداد فعال نیست.', 403 ); }
+		if ( ! $host_grant && ! $guest_grant ) wp_die( 'دسترسی به کارت منقضی شده است. کارت را دوباره بازیابی کنید.', 403 );
+		$event = ECM_Events::registration_event( $registration );
+		if ( ! ECM_Events::allows( $event, 'card' ) ) wp_die( 'این رویداد فعال نیست.', 403 );
 		$config = ECM_Events::config( $event );
 		$group_cards = 'group_all' === ( $config['card_access_mode'] ?? 'own_only' );
 		if ( $participant_id ) {
-			if ( ! $requested || (int) $requested->registration_id !== $id ) { ECM_Activity::mark_access_denied( 'participant_mismatch', isset( $event ) && $event ? (int) $event->id : 0, $id ); wp_die( 'کارت پیدا نشد.', 404 ); }
-			if ( $host_grant && ! $guest_grant && 'guest' === (string) $requested->participant_type && ! $group_cards ) { ECM_Activity::mark_access_denied( 'guest_card_scope_denied', isset( $event ) && $event ? (int) $event->id : 0, $id ); wp_die( 'معرف فقط اجازه مشاهده و چاپ کارت خودش را دارد.', 403 ); }
+			if ( ! $requested || (int) $requested->registration_id !== $id ) wp_die( 'کارت پیدا نشد.', 404 );
+			if ( $host_grant && ! $guest_grant && 'guest' === (string) $requested->participant_type && ! $group_cards ) wp_die( 'معرف فقط اجازه مشاهده و چاپ کارت خودش را دارد.', 403 );
 			$participants = array( $requested );
 		} else {
-			if ( ! $host_grant ) { ECM_Activity::mark_access_denied( 'group_card_grant_missing', isset( $event ) && $event ? (int) $event->id : 0, $id ); wp_die( 'فقط ثبت‌نام‌کننده اصلی می‌تواند همه کارت‌ها را چاپ کند.', 403 ); }
+			if ( ! $host_grant ) wp_die( 'فقط ثبت‌نام‌کننده اصلی می‌تواند همه کارت‌ها را چاپ کند.', 403 );
 			$primary = ECM_DB::primary_participant( $id );
 			$participants = $group_cards ? ECM_DB::participants_for_registration( $id ) : array_filter( array( $primary ? ECM_DB::participant_identity( (int) $primary->id ) : null ) );
 		}

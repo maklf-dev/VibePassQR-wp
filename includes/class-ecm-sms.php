@@ -41,9 +41,6 @@ final class ECM_SMS {
 	public static function states(): array {
 		return array(
 			'registration' => 'ثبت‌نام موفق و صدور کارت',
-			'workflow_submitted' => 'دریافت درخواست جدید (Workflow)',
-			'workflow_needs_correction' => 'درخواست اصلاح مدارک (Workflow)',
-			'workflow_rejected' => 'رد درخواست (Workflow)',
 			'attendance'   => 'ثبت حضور موفق',
 			'recovery'     => 'بازیابی کارت',
 			'repeat'       => 'ثبت حضور تکراری',
@@ -118,7 +115,8 @@ final class ECM_SMS {
 			return;
 		}
 		$registration = ECM_DB::registration( $registration_id );
-		if ( ! $registration ) {
+		if ( ! $registration || ! empty( $registration->is_test ) ) {
+			// A test card/check-in must never enqueue a real notification.
 			return;
 		}
 		global $wpdb;
@@ -206,72 +204,6 @@ final class ECM_SMS {
 		}
 		// Automatic notifications never block registration or attendance requests.
 		wp_schedule_single_event( time() + 1, 'ecm_sms_job', array( $sms_id ) );
-	}
-
-
-	/**
-	 * Queue opt-in workflow notifications before a canonical registration exists.
-	 * Uses the existing SMS table, attempts worker, profiles, retries and reports.
-	 * Never inject tracking secrets, OTP, phone or receipt content into logs.
-	 */
-	public static function queue_workflow( int $instance_id, string $state ): void {
-		if ( ! ECM_Workflow::enabled() || ! defined( 'ECM_WORKFLOW_STAGING_SMS' ) || true !== ECM_WORKFLOW_STAGING_SMS
-			|| ! function_exists( 'wp_get_environment_type' ) || ! in_array( wp_get_environment_type(), array( 'local', 'development', 'staging' ), true )
-			|| ! in_array( $state, array( 'workflow_submitted', 'workflow_needs_correction', 'workflow_rejected' ), true ) ) {
-			return;
-		}
-		global $wpdb;
-		$row = $wpdb->get_row( $wpdb->prepare(
-			'SELECT id,event_id,lock_version,data_json,state FROM ' . ECM_DB::table( 'flow_instances' ) . ' WHERE id=%d', $instance_id
-		) );
-		if ( ! $row || ( 'workflow_submitted' === $state && 'under_review' !== $row->state )
-			|| ( 'workflow_needs_correction' === $state && 'needs_correction' !== $row->state )
-			|| ( 'workflow_rejected' === $state && 'rejected' !== $row->state ) ) { return; }
-		$event = ECM_Events::event( (int) $row->event_id );
-		if ( ! $event ) { return; }
-		$settings = ECM_Utils::settings();
-		if ( empty( $settings['sms_enabled'] ) ) { return; }
-		$config = ECM_Events::config( $event );
-		if ( empty( $config['sms_inherit'] ) ) {
-			$settings['sms_mode'] = 'pattern' === ( $config['sms_mode'] ?? '' ) ? 'pattern' : 'webservice';
-			$rule = (array) ( $config['sms_rules'][ $state ] ?? array() );
-			self::apply_rule( $settings, $state, $rule );
-		}
-		if ( empty( $settings[ 'sms_' . $state ] ) ) { return; }
-		$data = json_decode( (string) $row->data_json, true );
-		if ( ! is_array( $data ) ) { return; }
-		$mobile_field = sanitize_key( (string) ( $config['sms_field'] ?? 'mobile' ) );
-		$mobile = ECM_Utils::normalize_mobile( (string) ( $data[ $mobile_field ] ?? '' ) );
-		$recipient = $mobile ? self::phone( $mobile ) : '';
-		if ( ! $recipient ) { return; }
-		$vars = array(
-			'{event_name}' => (string) $event->title,
-			'{status}' => (string) ( self::states()[ $state ] ?? '' ),
-			'{date}' => ECM_Utils::utc_to_local( ECM_Utils::now_utc(), 'Y/m/d H:i' ),
-		);
-		$template = (string) ( $settings[ 'sms_' . $state . '_text' ] ?? '' );
-		$message = strtr( $template, $vars );
-		$payload = self::payload( $state, $recipient, $message, $vars, $settings, null );
-		$transport_key = sanitize_key( (string) ( $settings['sms_transport'] ?? 'edge' ) );
-		if ( ! ECM_SMS_Transports::get( $transport_key ) ) { $transport_key = 'edge'; }
-		$paused = ! empty( $settings['sms_transport_paused'] );
-		$status = is_wp_error( $payload ) ? 'failed' : ( $paused ? 'paused' : 'queued' );
-		$event_key = 'workflow-' . $instance_id . '-' . $state . '-r' . (int) $row->lock_version;
-		$table = ECM_DB::table( 'sms' );
-		if ( $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE event_key=%s LIMIT 1", $event_key ) ) ) { return; }
-		$ok = $wpdb->insert( $table, array(
-			'registration_id' => 0, 'participant_id' => 0, 'event_id' => (int) $event->id, 'session_id' => 0,
-			'notification_type' => $state, 'transport' => $transport_key, 'event_key' => $event_key,
-			'recipient' => $recipient, 'message' => $message,
-			'payload' => is_wp_error( $payload ) ? '{}' : wp_json_encode( $payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
-			'status' => $status, 'error_code' => is_wp_error( $payload ) ? sanitize_key( $payload->get_error_code() ) : ( $paused ? 'transport_paused' : null ),
-			'created_at' => ECM_Utils::now_utc(), 'updated_at' => ECM_Utils::now_utc(),
-		) );
-		if ( ! $ok ) {
-			ECM_Diagnostics::record( 'sms', 'Workflow SMS queue failed', array( 'instance_id'=>$instance_id, 'state'=>$state ) );
-			return;
-		}
-		if ( 'queued' === $status ) { wp_schedule_single_event( time() + 1, 'ecm_sms_job', array( (int) $wpdb->insert_id ) ); }
 	}
 
 	/** Resolve global -> event -> session notification policy. */
@@ -634,17 +566,6 @@ final class ECM_SMS {
 		self::finish( $row, $status, sanitize_key( (string) ( $result['error_code'] ?? 'transport_rejected' ) ), absint( $result['http_code'] ?? 0 ), sanitize_text_field( (string) ( $result['provider_id'] ?? '' ) ), (string) ( $result['summary'] ?? $result['message'] ?? '' ), $attempt_id, absint( $result['latency_ms'] ?? 0 ), $transport_key );
 	}
 
-	/** Configurable minute offsets (after attempt 1, 2, 3, etc.), bounded for WP-Cron. */
-	public static function retry_delay_seconds( int $completed_attempts ): int {
-		$raw = (string) ( ECM_Utils::settings()['sms_retry_delays'] ?? '5,10,15' );
-		$minutes = array_values( array_filter( array_map( 'absint', explode( ',', $raw ) ), static fn( int $x ): bool => $x >= 1 && $x <= 180 ) );
-		if ( ! $minutes ) {
-			$minutes = array( 5, 10, 15 );
-		}
-		$index = max( 0, min( count( $minutes ) - 1, $completed_attempts - 1 ) );
-		return $minutes[ $index ] * MINUTE_IN_SECONDS;
-	}
-
 	private static function retry_status( int $attempts ): string {
 		$maximum = min( 10, max( 1, absint( ECM_Utils::settings()['sms_max_attempts'] ?? 3 ) ) );
 		return $attempts < $maximum ? 'retry_wait' : 'failed';
@@ -670,7 +591,7 @@ final class ECM_SMS {
 		global $wpdb;
 		$next = null;
 		if ( 'retry_wait' === $status ) {
-			$delay = self::retry_delay_seconds( (int) $row->attempts );
+			$delay = min( 1800, 60 * ( 2 ** max( 0, (int) $row->attempts - 1 ) ) );
 			$next  = gmdate( 'Y-m-d H:i:s', time() + $delay );
 			wp_schedule_single_event( time() + $delay, 'ecm_sms_job', array( (int) $row->id ) );
 		}
@@ -1053,8 +974,6 @@ final class ECM_SMS {
 		$settings['sms_transport_paused'] = empty( $raw['paused'] ) ? 0 : 1;
 		$settings['sms_worker_batch'] = min( 100, max( 1, absint( $raw['worker_batch'] ?? 25 ) ) );
 		$settings['sms_max_attempts'] = min( 10, max( 1, absint( $raw['max_attempts'] ?? 3 ) ) );
-		$delays = array_slice( array_map( 'absint', preg_split( '/[,،\s]+/u', (string) ( $raw['retry_delays'] ?? '5,10,15' ), -1, PREG_SPLIT_NO_EMPTY ) ), 0, 9 );
-		$settings['sms_retry_delays'] = $delays && count( array_filter( $delays, static fn( int $m ): bool => $m >= 1 && $m <= 180 ) ) === count( $delays ) ? implode( ',', $delays ) : '5,10,15';
 		$profiles = array();
 		foreach ( (array) ( $raw['profiles'] ?? array() ) as $profile_id => $profile_raw ) {
 			$profile_id = sanitize_key( (string) $profile_id );
@@ -1564,7 +1483,7 @@ final class ECM_SMS {
 							<label class="ecm-setting"><span>API Key جدید</span><input type="password" name="api_key" value="" autocomplete="new-password" <?php disabled( defined( 'ECM_IPPANEL_API_KEY' ) ); ?>><small><?php echo defined( 'ECM_IPPANEL_API_KEY' ) ? 'کلید امن از wp-config.php خوانده می‌شود.' : 'فقط برای اتصال مستقیم Edge؛ خالی یعنی کلید قبلی حفظ شود.'; ?></small></label>
 							<label class="ecm-setting"><span>مسیر شبکه Edge</span><select name="sms[ip_mode]"><option value="auto" <?php selected( $settings['sms_ip_mode'] ?? 'auto', 'auto' ); ?>>خودکار</option><option value="ipv4" <?php selected( $settings['sms_ip_mode'] ?? 'auto', 'ipv4' ); ?>>اجبار IPv4</option></select><small>فقط درخواست‌های مستقیم IPPanel را تحت تأثیر قرار می‌دهد.</small></label>
 							<label class="ecm-setting"><span>تعداد پردازش در هر Worker</span><input type="number" min="1" max="100" name="sms[worker_batch]" value="<?php echo esc_attr( absint( $settings['sms_worker_batch'] ?? 25 ) ); ?>"><small>برای بار بالا مقدار ۲۵ تا ۵۰ مناسب است؛ محدودیت سرویس‌دهنده را در نظر بگیرید.</small></label>
-							<label class="ecm-setting"><span>حداکثر تلاش خودکار (شامل ارسال اول)</span><input type="number" min="1" max="10" name="sms[max_attempts]" value="<?php echo esc_attr( absint( $settings['sms_max_attempts'] ?? 3 ) ); ?>"><small>برای ۳ بار تلاش مجدد، مقدار ۴ تنظیم شود.</small></label><label class="ecm-setting"><span>فاصله تلاش‌های مجدد (دقیقه)</span><input type="text" dir="ltr" name="sms[retry_delays]" value="<?php echo esc_attr( (string) ( $settings['sms_retry_delays'] ?? '5,10,15' ) ); ?>" placeholder="5,10,15"><small>فواصل پس از تلاش اول، دوم و سوم. حد مجاز هر فاصله ۱ تا ۱۸۰ دقیقه است.</small></label>
+							<label class="ecm-setting"><span>حداکثر تلاش خودکار</span><input type="number" min="1" max="10" name="sms[max_attempts]" value="<?php echo esc_attr( absint( $settings['sms_max_attempts'] ?? 3 ) ); ?>"><small>خطاهای موقت با فاصله زمانی دوباره تلاش می‌شوند.</small></label>
 						</div>
 						<div class="ecm-sms-safety"><label class="ecm-switch"><input type="checkbox" name="sms[paused]" value="1" <?php checked( ! empty( $settings['sms_transport_paused'] ) ); ?>><span>ارسال خودکار موقتاً متوقف باشد</span></label><label><input type="checkbox" name="sms[release_paused]" value="1"> پس از فعال‌سازی، رکوردهای متوقف‌شده قبلی نیز آزاد شوند</label><?php if ( ! defined( 'ECM_IPPANEL_API_KEY' ) ) : ?><label><input type="checkbox" name="remove_key" value="1"> کلید ذخیره‌شده Edge حذف شود</label><?php endif; ?></div>
 					</section>

@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
 final class ECM_Events {
 	private const MIGRATION_HOOK = 'ecm_migrate_participants';
 	private const CONFIG_KEYS = array(
-		'registration_process', 'form_intro', 'currency_label', 'amount', 'rial_rate', 'currency_decimals',
+		'form_intro', 'currency_label', 'amount', 'rial_rate', 'currency_decimals',
 		'payment_mode', 'payment_required', 'payment_button', 'price_label',
 		'recovery_link_text', 'recovery_title', 'recovery_intro', 'recovery_button',
 		'recovery_not_found', 'success_text', 'card_ready_title', 'home_link_text',
@@ -26,6 +26,7 @@ final class ECM_Events {
 		'attendance_instruction', 'card_instruction', 'name_field', 'sms_field',
 			'fields', 'recovery_fields', 'prevent_duplicate_phone', 'duplicate_phone_message',
 			'allow_duplicate_guest_phone', 'duplicate_guest_phone_message', 'sms_inherit', 'sms_mode', 'sms_rules',
+		'access_registration', 'access_recovery', 'access_card', 'access_attendance', 'registration_closed_title', 'registration_closed_message',
 	);
 
 	public static function hooks(): void {
@@ -116,7 +117,12 @@ final class ECM_Events {
 				$config[ $key ] = $global[ $key ];
 			}
 		}
-		$config['registration_process'] = 'classic'; // All existing events remain on the legacy registration path.
+		$config['access_registration'] = 1;
+		$config['access_recovery'] = 1;
+		$config['access_card'] = 1;
+		$config['access_attendance'] = 1;
+		$config['registration_closed_title'] = 'مهلت ثبت‌نام به پایان رسیده است';
+		$config['registration_closed_message'] = 'ثبت‌نام جدید برای این رویداد بسته است. در صورت ثبت‌نام قبلی، کارت خود را بازیابی کنید.';
 		$config['sms_inherit'] = 1;
 		$config['sms_mode']    = 'pattern' === ( $global['sms_mode'] ?? '' ) ? 'pattern' : 'webservice';
 		$config['sms_rules']   = self::global_sms_rules( $global );
@@ -300,6 +306,18 @@ final class ECM_Events {
 
 	public static function is_publicly_active( ?object $event ): bool {
 		return $event && 'published' === (string) $event->status && ! empty( $event->enabled );
+	}
+
+	/** Public surface switches are additive; missing keys preserve 0.6.6 behavior. */
+	public static function allows( ?object $event, string $surface ): bool {
+		if ( ! self::is_publicly_active( $event ) ) {
+			return false;
+		}
+		if ( ! in_array( $surface, array( 'registration', 'recovery', 'card', 'attendance' ), true ) ) {
+			return false;
+		}
+		$config = self::config( $event );
+		return ! array_key_exists( 'access_' . $surface, $config ) || ! empty( $config[ 'access_' . $surface ] );
 	}
 
 	public static function registration_event( object $registration ): ?object {
@@ -573,18 +591,6 @@ final class ECM_Events {
 			wp_die( 'Forbidden', 403 );
 		}
 		$events     = self::all();
-		// Display-only filtering; the editing context and stored event data never change.
-		$list_filter = isset( $_GET['ecm_list_status'] ) ? sanitize_key( wp_unslash( (string) $_GET['ecm_list_status'] ) ) : 'all';
-		if ( ! in_array( $list_filter, array( 'all', 'active', 'inactive', 'draft', 'archived' ), true ) ) { $list_filter = 'all'; }
-		$list_search = isset( $_GET['ecm_list_search'] ) ? substr( sanitize_text_field( wp_unslash( (string) $_GET['ecm_list_search'] ) ), 0, 100 ) : '';
-		$listed_events = array_values( array_filter( $events, static function ( object $item ) use ( $list_filter, $list_search ): bool {
-			$active = 'published' === (string) $item->status && (int) $item->enabled === 1;
-			if ( 'active' === $list_filter && ! $active ) { return false; }
-			if ( 'inactive' === $list_filter && $active ) { return false; }
-			if ( in_array( $list_filter, array( 'draft', 'archived' ), true ) && (string) $item->status !== $list_filter ) { return false; }
-			if ( $list_search && function_exists( 'mb_stripos' ) ) { return mb_stripos( (string) $item->title . ' ' . (string) $item->slug, $list_search ) !== false; }
-			return ! $list_search || stripos( (string) $item->title . ' ' . (string) $item->slug, $list_search ) !== false;
-		} ) );
 		$edit_id    = isset( $_GET['edit'] ) ? absint( $_GET['edit'] ) : 0;
 		$current    = $edit_id ? self::event( $edit_id ) : null;
 		$is_new     = isset( $_GET['new'] ) || ! $current;
@@ -621,16 +627,8 @@ final class ECM_Events {
 			<?php if ( isset( $_GET['saved'] ) ) : ?><div class="notice notice-success is-dismissible"><p>رویداد و دسترسی اپراتورها ذخیره شد.</p></div><?php endif; ?>
 			<div class="ecm-event-admin-layout">
 				<section class="ecm-panel is-active ecm-event-list-panel"><div class="ecm-panel__title"><div><h2>فهرست رویدادها</h2><p>رویداد دارای سابقه حذف نمی‌شود؛ در صورت نیاز آن را بایگانی کنید.</p></div></div>
-					<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="ecm-event-list-filters">
-						<input type="hidden" name="page" value="ecm-events">
-						<label>وضعیت <select name="ecm_list_status"><option value="all" <?php selected( $list_filter, 'all' ); ?>>همه</option><option value="active" <?php selected( $list_filter, 'active' ); ?>>فعال</option><option value="inactive" <?php selected( $list_filter, 'inactive' ); ?>>غیرفعال</option><option value="draft" <?php selected( $list_filter, 'draft' ); ?>>پیش‌نویس</option><option value="archived" <?php selected( $list_filter, 'archived' ); ?>>بایگانی</option></select></label>
-						<label>جست‌وجو <input type="search" name="ecm_list_search" value="<?php echo esc_attr( $list_search ); ?>" placeholder="عنوان یا شناسه رویداد"></label>
-						<button type="submit" class="button">اعمال فیلتر</button>
-					</form>
-					<p class="description"><?php echo esc_html( count( $listed_events ) . ' رویداد از ' . count( $events ) . ' رویداد' ); ?></p>
 					<div class="ecm-event-admin-list">
-						<?php if ( ! $listed_events ) : ?><p>رویدادی مطابق فیلتر پیدا نشد.</p><?php endif; ?>
-						<?php foreach ( $listed_events as $event ) : ?>
+						<?php foreach ( $events as $event ) : ?>
 							<div class="ecm-event-admin-list__item"><a class="<?php echo (int) $event->id === (int) $current->id ? 'is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( array( 'page' => 'ecm-events', 'edit' => (int) $event->id ), admin_url( 'admin.php' ) ) ); ?>"><strong><?php echo esc_html( $event->title ); ?></strong><span><?php echo esc_html( $event->slug ); ?></span><small><?php echo esc_html( self::status_label( $event->status ) ); ?><?php echo empty( $event->enabled ) ? ' · غیرفعال' : ''; ?><?php echo (int) $event->id === $default_id ? ' · پیش‌فرض' : ''; ?></small></a><a class="button button-small" href="<?php echo esc_url( ECM_Reports::url( 'event', array( 'ecm_id' => (int) $event->id ), true ) ); ?>">گزارش</a></div>
 					<?php endforeach; ?>
 					</div>
@@ -640,6 +638,14 @@ final class ECM_Events {
 						<div class="ecm-admin-grid ecm-admin-grid--2"><label class="ecm-setting"><span>عنوان رویداد</span><input type="text" name="title" value="<?php echo esc_attr( $current->title ); ?>" required></label><label class="ecm-setting"><span>شناسه URL انگلیسی</span><input type="text" name="slug" value="<?php echo esc_attr( $current->slug ); ?>" dir="ltr" placeholder="spring-event" required></label></div>
 						<div class="ecm-admin-grid ecm-admin-grid--2"><label class="ecm-setting"><span>وضعیت انتشار</span><select name="status" <?php disabled( (int) $current->id, $default_id ); ?>><option value="draft" <?php selected( $current->status, 'draft' ); ?>>پیش‌نویس</option><option value="published" <?php selected( $current->status, 'published' ); ?>>منتشرشده</option><option value="archived" <?php selected( $current->status, 'archived' ); ?>>بایگانی</option></select><?php if ( (int) $current->id === $default_id ) : ?><input type="hidden" name="status" value="published"><small>رویداد پیش‌فرض برای سازگاری با لینک‌های قبلی منتشر می‌ماند؛ می‌توانید کل رویداد را با کلید مقابل غیرفعال کنید.</small><?php endif; ?></label><label class="ecm-setting"><span>روش پیش‌فرض ثبت حضور</span><select name="attendance_mode"><option value="self_service" <?php selected( $current->attendance_mode, 'self_service' ); ?>>توسط خود کاربر</option><option value="operator_only" <?php selected( $current->attendance_mode, 'operator_only' ); ?>>فقط اپراتور مجاز</option><option value="hybrid" <?php selected( $current->attendance_mode, 'hybrid' ); ?>>ترکیبی</option></select></label></div>
 						<div class="ecm-subpanel"><div class="ecm-panel__title"><div><h3>فعال‌بودن کل رویداد</h3><p>در حالت غیرفعال، همه مسیرهای عمومی رویداد شامل ثبت‌نام، بازیابی، نمایش کارت و ثبت حضور بسته می‌شوند.</p></div><label class="ecm-switch"><input type="checkbox" name="enabled" value="1" <?php checked( ! empty( $current->enabled ) ); ?>><span>رویداد فعال است</span></label></div><div class="ecm-admin-grid ecm-admin-grid--2"><label class="ecm-setting"><span>عنوان پیام غیرفعال</span><input type="text" name="disabled_title" value="<?php echo esc_attr( $current->disabled_title ); ?>"></label><label class="ecm-setting"><span>پیام لینک غیرفعال</span><textarea name="disabled_message" rows="3"><?php echo esc_textarea( $current->disabled_message ); ?></textarea></label></div></div>
+						<div class="ecm-subpanel ecm-event-access"><h3>مدیریت مستقل دسترسی رویداد</h3><p>برای بستن ثبت‌نام و حفظ بازیابی و حضور، «رویداد فعال» و «منتشرشده» را نگه دارید و فقط ثبت‌نام را خاموش کنید. این تنظیمات بر لینک‌های مستقیم و درخواست‌های سمت سرور نیز اعمال می‌شوند.</p>
+							<div class="ecm-admin-grid ecm-admin-grid--2">
+							<?php foreach ( array( 'registration' => 'ثبت‌نام جدید', 'recovery' => 'بازیابی کارت', 'card' => 'مشاهده و چاپ کارت', 'attendance' => 'ثبت حضور با QR و اپراتور' ) as $surface => $label ) : ?>
+							<label class="ecm-switch"><input type="checkbox" name="event_settings[access_<?php echo esc_attr( $surface ); ?>]" value="1" <?php checked( ! array_key_exists( 'access_' . $surface, $config ) || ! empty( $config[ 'access_' . $surface ] ) ); ?>><span><?php echo esc_html( $label ); ?></span></label>
+							<?php endforeach; ?>
+							<label class="ecm-setting"><span>عنوان پایان ثبت‌نام</span><input type="text" name="event_settings[registration_closed_title]" value="<?php echo esc_attr( $config['registration_closed_title'] ?? '' ); ?>"></label>
+							<label class="ecm-setting"><span>متن پایان ثبت‌نام</span><textarea name="event_settings[registration_closed_message]" rows="3"><?php echo esc_textarea( $config['registration_closed_message'] ?? '' ); ?></textarea></label>
+							</div><p><small>خاموش‌کردن کل رویداد، مثل نسخه 0.6.6، همه مسیرهای عمومی را می‌بندد. برای پایان ثبت‌نام فقط کلید «ثبت‌نام جدید» را خاموش کنید.</small></p></div>
 						<?php self::event_config_sections( $config, $current ); ?>
 							<div class="ecm-subpanel">
 								<h3>مهمان‌ها و کارت‌های مستقل</h3>
@@ -670,7 +676,6 @@ final class ECM_Events {
 		?>
 		<div class="ecm-event-config">
 			<details class="ecm-subpanel ecm-event-config-section" open><summary><strong>فرم ثبت‌نام و پرداخت</strong><span>فیلدها، بازیابی، حالت رایگان و مبالغ</span></summary>
-				<label class="ecm-setting"><span>نوع فرایند ثبت‌نام (در آلفا فقط با مجوز Staging)</span><select name="event_settings[registration_process]"><option value="classic" <?php selected( $config['registration_process'] ?? 'classic', 'classic' ); ?>>کلاسیک (پیش‌فرض)</option><option value="custom_workflow" <?php selected( $config['registration_process'] ?? '', 'custom_workflow' ); ?>>اختصاصی چهارمرحله‌ای (Staging)</option></select><small>صفحه عمومی اختصاصی فقط با ECM_WORKFLOW_STAGING_PUBLIC=true و در محیط آزمایشی HTTPS نمایش داده می‌شود؛ در غیر این صورت برای محافظت از صدور کارت مسیر Classic این رویداد بسته می‌ماند.</small></label>
 				<div class="ecm-panel__title"><div><h3>فیلدهای همین رویداد</h3><p>این فرم فقط روی همین رویداد اثر دارد. نوع «مهمان» دو ورودی نام و موبایل تکرارشونده می‌سازد.</p></div><button type="button" class="button button-primary" data-add-field>افزودن فیلد</button></div>
 				<div class="ecm-builder" data-field-list><?php foreach ( $fields as $index => $field ) { ECM_Admin::field_row( (int) $index, (array) $field ); } ?></div>
 				<div class="ecm-admin-grid ecm-admin-grid--2">
@@ -859,6 +864,11 @@ final class ECM_Events {
 
 	private static function sanitize_event_config( array $raw, array $fields, array $old ): array {
 		$config = $old;
+		foreach ( array( 'registration', 'recovery', 'card', 'attendance' ) as $surface ) {
+			$config[ 'access_' . $surface ] = empty( $raw[ 'access_' . $surface ] ) ? 0 : 1;
+		}
+		$config['registration_closed_title'] = sanitize_text_field( $raw['registration_closed_title'] ?? ( $old['registration_closed_title'] ?? '' ) );
+		$config['registration_closed_message'] = sanitize_textarea_field( $raw['registration_closed_message'] ?? ( $old['registration_closed_message'] ?? '' ) );
 			$text_keys = array( 'currency_label', 'payment_button', 'price_label', 'recovery_link_text', 'recovery_title', 'recovery_button', 'recovery_not_found', 'card_ready_title', 'home_link_text', 'print_button', 'invalid_qr_title', 'invalid_qr_message', 'early_title', 'early_message', 'late_title', 'late_message', 'outside_title', 'outside_message', 'registration_title', 'registration_button', 'attendance_button', 'attendance_instruction', 'card_instruction', 'duplicate_phone_message', 'duplicate_guest_phone_message', 'recovery_otp_title', 'recovery_otp_send_button', 'recovery_otp_verify_title', 'recovery_otp_verify_button', 'recovery_otp_resend_button', 'recovery_otp_sent_message', 'recovery_otp_invalid_message', 'recovery_otp_expired_message', 'recovery_otp_send_failed_message', 'recovery_otp_rate_message', 'recovery_otp_shared_message' );
 		foreach ( $text_keys as $key ) {
 			$config[ $key ] = sanitize_text_field( $raw[ $key ] ?? ( $old[ $key ] ?? '' ) );
@@ -872,7 +882,6 @@ final class ECM_Events {
 		if ( ! preg_match( '/^\d{1,12}(?:\.\d{1,6})?$/', $config['amount'] ) || ! preg_match( '/^\d{1,12}(?:\.\d{1,6})?$/', $config['rial_rate'] ) || (float) $config['rial_rate'] <= 0 || strlen( ECM_Utils::rial_amount( $config['amount'], $config['rial_rate'] ) ) > 18 ) {
 			wp_die( 'مبلغ یا نرخ معتبر نیست: حداکثر ۱۲ رقم صحیح و ۶ رقم اعشار مجاز است و نرخ باید بزرگ‌تر از صفر باشد.' );
 		}
-		$config['registration_process'] = 'custom_workflow' === ( $raw['registration_process'] ?? ( $old['registration_process'] ?? 'classic' ) ) ? 'custom_workflow' : 'classic';
 		$config['payment_mode']     = 'offline';
 		$config['payment_required'] = empty( $raw['payment_required'] ) ? 0 : 1;
 			$config['prevent_duplicate_phone'] = empty( $raw['prevent_duplicate_phone'] ) ? 0 : 1;

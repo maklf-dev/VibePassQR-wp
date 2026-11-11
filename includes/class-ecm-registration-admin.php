@@ -70,6 +70,18 @@ final class ECM_Registration_Admin {
 		return (int) $result;
 	}
 
+	/** Never allow test tooling to delete a live registration, even with a forged ID. */
+	public static function delete_test_registrations( array $ids ): int {
+		global $wpdb;
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+		if ( ! $ids ) { return 0; }
+		$table = ECM_DB::table( 'registrations' );
+		$id_list = implode( ',', $ids );
+		$events = ECM_DB::table( 'events' );
+		$allowed = array_map( 'absint', $wpdb->get_col( "SELECT r.id FROM {$table} r WHERE r.is_test=1 AND r.id IN ({$id_list}) AND EXISTS (SELECT 1 FROM {$events} ev WHERE ev.registration_id=r.id AND ev.event_type='admin_test_created')" ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $allowed ? self::delete_registrations( $allowed ) : 0;
+	}
+
 	private static function delete_registrations( array $ids ): int {
 		global $wpdb;
 		$ids      = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );

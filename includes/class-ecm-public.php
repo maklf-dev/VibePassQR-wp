@@ -7,7 +7,6 @@ final class ECM_Public {
 		add_shortcode( 'ecm_registration', array( $this, 'registration_shortcode' ) );
 		add_shortcode( 'ecm_recovery', array( $this, 'recovery_shortcode' ) );
 		add_shortcode( 'ecm_card', array( $this, 'card_shortcode' ) );
-		add_shortcode( 'ecm_event_list', array( $this, 'event_list_shortcode' ) );
 		add_shortcode( 'ecm_attendance', array( $this, 'attendance_shortcode' ) );
 		add_shortcode( 'ecm_manager', array( $this, 'manager_shortcode' ) );
 
@@ -85,7 +84,7 @@ final class ECM_Public {
 		$has_content = false;
 		global $post;
 		if ( $post instanceof WP_Post ) {
-			foreach ( array( 'ecm_registration', 'ecm_recovery', 'ecm_card', 'ecm_attendance', 'ecm_manager', 'ecm_portal', 'ecm_event_list', 'ecm_flow' ) as $shortcode ) {
+			foreach ( array( 'ecm_registration', 'ecm_recovery', 'ecm_card', 'ecm_attendance', 'ecm_manager', 'ecm_portal' ) as $shortcode ) {
 				if ( has_shortcode( $post->post_content, $shortcode ) ) {
 					$has_content = true;
 					break;
@@ -112,22 +111,6 @@ final class ECM_Public {
 		return '<section class="ecm-shell ' . esc_attr( $class ) . '" dir="rtl"><div class="ecm-phone-bar"><span></span><strong>' . esc_html( $title ?: $fallback_title ) . '</strong><span></span></div>' . $content . '</section>';
 	}
 
-	/** Optional public directory; draft/archived events are never exposed. */
-	public function event_list_shortcode(): string {
-		$this->assets();
-		$events = array_filter( ECM_Events::all(), static fn( $event ): bool => 'published' === (string) $event->status );
-		ob_start();
-		?>
-		<section class="ecm-event-directory" dir="rtl"><h1>فهرست رویدادها</h1>
-		<?php if ( ! $events ) : ?><p>در حال حاضر رویداد منتشرشده‌ای وجود ندارد.</p><?php endif; ?>
-		<div class="ecm-event-directory__grid"><?php foreach ( $events as $event ) : $active = ECM_Events::is_publicly_active( $event ); ?>
-		<article class="ecm-event-directory__item"><h2><?php echo esc_html( $event->title ); ?></h2><span class="ecm-badge"><?php echo esc_html( $active ? 'فعال' : 'غیرفعال' ); ?></span>
-		<?php if ( $active && 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) : ?><?php if ( ECM_Workflow_Public::available( $event ) ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام چندمرحله‌ای</a><?php else : ?><p>ثبت‌نام اختصاصی این رویداد هنوز برای عموم فعال نشده است.</p><?php endif; ?><?php elseif ( $active ) : ?><a class="ecm-button ecm-button--primary" href="<?php echo esc_url( ECM_Events::registration_url( $event ) ); ?>">ثبت‌نام در رویداد</a><?php else : ?><p><?php echo esc_html( (string) $event->disabled_message ); ?></p><?php endif; ?></article>
-		<?php endforeach; ?></div></section>
-		<?php
-		return (string) ob_get_clean();
-	}
-
 	public function registration_shortcode(): string {
 		$this->assets();
 		$event    = ECM_Events::requested_event();
@@ -137,14 +120,11 @@ final class ECM_Public {
 		if ( ! ECM_Events::is_publicly_active( $event ) ) {
 			return $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
 		}
-		// Fail closed on explicitly opted-in staging events: Classic would
-		// otherwise issue a card immediately and bypass manual review.
-		if ( 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) {
-			return ECM_Workflow_Public::available( $event )
-				? ECM_Workflow_Public::render( $event )
-				: $this->attendance_state( 'warning', 'این رویداد در حال آماده‌سازی فرایند ثبت‌نام اختصاصی است و ثبت‌نام عمومی آن هنوز فعال نشده است.', 'ثبت‌نام موقتاً غیرفعال است' );
-		}
 		$settings = ECM_Events::config( $event );
+		if ( ! ECM_Events::allows( $event, 'registration' ) ) {
+			$recovery_link = ECM_Events::allows( $event, 'recovery' ) ? '<p><a class="ecm-button ecm-button--primary" href="' . esc_url( ECM_Utils::page_url( 'recovery', array( 'event' => $event->slug ) ) ) . '">' . esc_html( $settings['recovery_link_text'] ?? 'بازیابی کارت' ) . '</a></p>' : '';
+			return $this->shell( '<div class="ecm-state ecm-state--warning"><h1>' . esc_html( $settings['registration_closed_title'] ?? 'ثبت‌نام بسته است' ) . '</h1><p>' . esc_html( $settings['registration_closed_message'] ?? '' ) . '</p>' . $recovery_link . '</div>', 'ecm-registration' );
+		}
 		$notice   = $this->notice_from_query();
 		ob_start();
 		?>
@@ -179,7 +159,7 @@ final class ECM_Public {
 		return $this->shell( (string) ob_get_clean(), 'ecm-registration', (string) $event->title );
 	}
 
-	public function render_field( array $field, string $value = '', ?object $event = null ): string {
+	private function render_field( array $field, string $value = '', ?object $event = null ): string {
 		$key         = sanitize_key( $field['key'] ?? '' );
 		$type        = sanitize_key( $field['type'] ?? 'text' );
 		$label       = (string) ( $field['label'] ?? $key );
@@ -250,9 +230,9 @@ final class ECM_Public {
 			exit;
 		}
 
-		if ( 'custom_workflow' === ECM_Workflow::mode_for_event( $event ) ) {
-			self::record_registration_rejection( (int) $event->id, 'workflow_not_public' );
-			wp_safe_redirect( add_query_arg( 'ecm_error', 'event', $redirect ) );
+		if ( ! ECM_Events::allows( $event, 'registration' ) ) {
+			self::record_registration_rejection( $event_id, 'registration_closed' );
+			wp_safe_redirect( $redirect );
 			exit;
 		}
 		$settings = ECM_Events::config( $event );
@@ -594,8 +574,8 @@ final class ECM_Public {
 		if ( $event_slug && ! $event ) {
 			return $this->attendance_state( 'error', 'رویداد درخواستی پیدا نشد.', 'لینک نامعتبر' );
 		}
-		if ( $event && ! ECM_Events::is_publicly_active( $event ) ) {
-			return $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
+		if ( $event && ! ECM_Events::allows( $event, 'recovery' ) ) {
+			return ECM_Events::is_publicly_active( $event ) ? $this->attendance_state( 'warning', 'بازیابی کارت برای این رویداد غیرفعال شده است.', 'بازیابی غیرفعال' ) : $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
 		}
 		if ( ! empty( $_GET['ticket'] ) ) {
 			global $wpdb;
@@ -612,11 +592,14 @@ final class ECM_Public {
 			return $this->shell( (string) ob_get_clean() );
 		}
 		$resolved_event = $event ?: ECM_Events::event( ECM_Events::default_event_id() );
+		if ( ! ECM_Events::allows( $resolved_event, 'recovery' ) ) {
+			return $this->attendance_state( 'warning', 'بازیابی کارت برای این رویداد غیرفعال است.', 'بازیابی غیرفعال' );
+		}
 		$settings = ECM_Events::config( $resolved_event );
 		$group_cards = 'group_all' === ( $settings['card_access_mode'] ?? 'own_only' );
 		ob_start();
 		?>
-		<div class="ecm-hero"><div><span class="ecm-kicker">RESTORE PASS</span><h1><?php echo esc_html( $settings['recovery_title'] ); ?></h1></div><a class="ecm-back" href="<?php echo esc_url( $event ? ECM_Events::registration_url( $event ) : ECM_Utils::page_url( 'registration' ) ); ?>">بازگشت</a></div>
+		<div class="ecm-hero"><div><span class="ecm-kicker">RESTORE PASS</span><h1><?php echo esc_html( $settings['recovery_title'] ); ?></h1></div><a class="ecm-back" href="<?php echo esc_url( $event && ! ECM_Events::allows( $event, 'registration' ) ? home_url( '/' ) : ( $event ? ECM_Events::registration_url( $event ) : ECM_Utils::page_url( 'registration' ) ) ); ?>">بازگشت</a></div>
 		<div class="ecm-content"><?php echo wp_kses_post( $settings['recovery_intro'] ); ?><?php echo $this->notice_from_query(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 		<?php if ( ! empty( $settings['recovery_otp_enabled'] ) ) : ?>
 		<form class="ecm-form ecm-otp-recovery" data-ecm-otp-recovery data-event-id="<?php echo esc_attr( (int) $resolved_event->id ); ?>" novalidate>
@@ -668,11 +651,15 @@ final class ECM_Public {
 			wp_safe_redirect( add_query_arg( 'ecm_error', 'rate', $redirect ) );
 			exit;
 		}
-		if ( $event && ! ECM_Events::is_publicly_active( $event ) ) {
+		if ( $event && ! ECM_Events::allows( $event, 'recovery' ) ) {
 			wp_safe_redirect( $redirect );
 			exit;
 		}
 		$recovery_event = $event ?: ECM_Events::event( ECM_Events::default_event_id() );
+		if ( $recovery_event && ! ECM_Events::allows( $recovery_event, 'recovery' ) ) {
+			wp_safe_redirect( $redirect );
+			exit;
+		}
 		if ( $recovery_event && ! empty( ECM_Events::config( $recovery_event )['recovery_otp_enabled'] ) ) {
 			wp_safe_redirect( $redirect );
 			exit;
@@ -714,9 +701,9 @@ final class ECM_Public {
 			return $this->shell( '<div class="ecm-state ecm-state--error"><h1>دسترسی به کارت ممکن نیست</h1><p>برای مشاهده کارت، ابتدا آن را بازیابی کنید.</p><a class="ecm-button ecm-button--primary" href="' . esc_url( ECM_Utils::page_url( 'recovery' ) ) . '">بازیابی کارت</a></div>' );
 		}
 		$event = ECM_Events::registration_event( $registration );
-		if ( ! ECM_Events::is_publicly_active( $event ) ) {
-			$title   = $event ? (string) $event->disabled_title : 'رویداد در دسترس نیست';
-			$message = $event ? (string) $event->disabled_message : 'رویداد مرتبط با این کارت پیدا نشد.';
+		if ( ! ECM_Events::allows( $event, 'card' ) ) {
+			$title   = $event && ECM_Events::is_publicly_active( $event ) ? 'نمایش کارت غیرفعال است' : ( $event ? (string) $event->disabled_title : 'رویداد در دسترس نیست' );
+			$message = $event && ECM_Events::is_publicly_active( $event ) ? 'دسترسی به کارت‌های این رویداد موقتاً بسته شده است.' : ( $event ? (string) $event->disabled_message : 'رویداد مرتبط با این کارت پیدا نشد.' );
 			return $this->attendance_state( 'warning', $message, $title );
 		}
 		$host_grant  = $registration ? ECM_Utils::has_card_grant( $registration ) : false;
@@ -792,8 +779,8 @@ final class ECM_Public {
 				return $this->attendance_state( 'error', 'رویداد مرتبط با این کارت پیدا نشد.', 'خطای اطلاعات کارت' );
 			}
 			$settings = ECM_Events::config( $event );
-			if ( ! ECM_Events::is_publicly_active( $event ) ) {
-				return $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
+			if ( ! ECM_Events::allows( $event, 'attendance' ) ) {
+				return ECM_Events::is_publicly_active( $event ) ? $this->attendance_state( 'warning', 'ثبت حضور برای این رویداد غیرفعال است.', 'ثبت حضور بسته است' ) : $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
 			}
 			$participant = ECM_DB::participant_identity( (int) $participant->id );
 			$window  = ECM_DB::attendance_window( (int) $event->id );

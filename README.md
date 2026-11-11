@@ -1,29 +1,6 @@
-# Event Card Manager — 0.7.0-alpha.7
+# Event Card Manager — 0.6.6.2
 
 افزونه چندرویدادی وردپرس برای ثبت‌نام، صدور کارت و QR، بازیابی کارت، ثبت حضور کاربر یا اپراتور، مدیریت مهمان‌ها و گزارش‌های مدیریتی.
-
-## فاز هشتم | 0.7.0-alpha.7
-
-این نسخه مستقیماً روی alpha.6 ارتقا می‌یابد و کنترل‌های ایمنی پیش از صدور کارت Workflow و ورود گروهی، محدودسازی شبکه OTP و جلوگیری از Cache شدن صفحه پیگیری را تقویت می‌کند. **هنوز برای Production تأیید نشده است.**
-
-- [یادداشت انتشار](docs/RELEASE-NOTES-0.7.0-alpha.7-FA.md) | [گزارش QA](docs/QA-REPORT-0.7.0-alpha.7-FA.md) | [راهنمای Staging](PHASE8-STAGING-FA.md)
-
-## تغییرات فاز هفتم (0.7.0-alpha.6)
-
-- گزارش‌ساز تحلیلی در «گزارش‌ها ← تحلیل و نمودار»: ۵ شاخص تجمیعی، مقایسه چند رویداد، گروه‌بندی روز/ساعت/وضعیت، نمودار SVG و خروجی CSV.
-- فیلتر و جست‌وجوی رویدادهای فعال، غیرفعال، پیش‌نویس و بایگانی در مدیریت رویدادها.
-- ورود گروهی **فقط برای رویداد Classic بدون پرداخت** با CSV (UTF-8) و XLSX (در صورت وجود ZipArchive/SimpleXML)، پیش‌نمایش رمزگذاری‌شده، محدودیت ۱۰۰ ردیف، کنترل تکراری، ثبت تراکنشی و کارت‌های مستقل.
-- ورود گروهی فقط در محیط Staging/Development و با `ECM_BULK_IMPORT_STAGING=true` برای مدیر کل فعال می‌شود؛ در Production عمداً مسدود است و هیچ پیامکی ارسال نمی‌کند.
-- آزمون‌های PHP و Mock موفق‌اند؛ آزمون واقعی WordPress/MariaDB و XLSX روی میزبان مجهز به XML/ZIP هنوز باقی است.
-- [یادداشت انتشار](docs/RELEASE-NOTES-0.7.0-alpha.6-FA.md) | [گزارش QA](docs/QA-REPORT-0.7.0-alpha.6-FA.md) | [آزمایش Staging](PHASE7-STAGING-FA.md)
-
-## وضعیت انتشار آلفا 0.7.0-alpha.5
-
-این نسخه فرایند چهارمرحله‌ای را به صورت **آزمایشی و فقط برای محیط Staging** در اختیار قرار می‌دهد: OTP اجباری برای درخواست عمومی جدید، پذیرش میثاق‌نامه، رسید خصوصی، بررسی مدیر، بازیابی با موبایل و OTP، ویرایش فیلدها (به‌جز موبایل اصلی) و شورت‌کدهای مجاز جدید. فعال‌سازی عمومی، OTP، ارسال اعلان مراحل و صدور کارت از یکدیگر جدا و همگی پیش‌فرض خاموش هستند. برای ثبت‌نام عمومی جدید در این نسخه باید علاوه بر Public، OTP نیز فعال باشد. رویدادهای Classic باید مثل قبل کار کنند. برای نصب روی سایت اصلی با ثبت‌نام فعال توصیه نمی‌شود.
-
-- [یادداشت انتشار آلفا ۵](docs/RELEASE-NOTES-0.7.0-alpha.5-FA.md)
-- [گزارش QA آلفا ۵](docs/QA-REPORT-0.7.0-alpha.5-FA.md)
-- [راهنمای آزمایش Staging](WORKFLOW-ALPHA5-FA.md)
 
 ## پیش‌نیازها
 
@@ -35,17 +12,9 @@
 
 ## نصب و ارتقا
 
-پیش از نصب از دیتابیس و `wp-content/uploads` نسخه پشتیبان تهیه کنید. برای ارتقا، ZIP جدید را روی نسخه قبلی جایگزین کنید و افزونه قبلی را Uninstall نکنید. نسخه 0.7.0-alpha.7 روی نسخه 0.7.0-alpha.6 به‌صورت افزایشی آماده شده و فقط در Staging آزمایش شود و شناسه ثبت‌نام، QRهای صادرشده، کارت‌ها، برگه‌ها و تنظیمات را حفظ می‌کند.
+پیش از نصب از دیتابیس و `wp-content/uploads` نسخه پشتیبان تهیه کنید. برای ارتقا، ZIP جدید را روی نسخه قبلی جایگزین کنید و افزونه قبلی را Uninstall نکنید. نسخه 0.6.6 به‌صورت افزایشی روی نسخه 0.6.5 و نسخه‌های قبلی نصب می‌شود و شناسه ثبت‌نام، QRهای صادرشده، کارت‌ها، برگه‌ها و تنظیمات را حفظ می‌کند.
 
 راهنمای کامل: [نصب و ارتقا](docs/INSTALLATION-UPGRADE-FA.md)
-
-## اصلاحات حفظ‌شده از فاز اول 0.6.7
-
-- فیلتر رویداد مشترک برای گزارش‌ها: آخرین رویداد فعال در حالت پیش‌فرض، همه رویدادها یا انتخاب هم‌زمان چند رویداد
-- صفحه‌بندی قابل انتخاب گزارش ثبت‌نام و حفظ فیلترها در CSV/چاپ
-- ستون ارتباط معرف و مهمان‌ها، کدهای علت خطای کارت، فواصل قابل تنظیم تلاش مجدد پیامک
-- شورت‌کد اختیاری `[ecm_event_list]` برای فهرست رویدادهای منتشرشده
-- موتور Workflow نسخه 0.7.0-alpha.5 آزمایشی و برای Staging است؛ تغییر خودکار رویدادهای Classic رخ نمی‌دهد
 
 ## امکانات اصلی
 
@@ -85,7 +54,7 @@
 
 ## وضعیت پیامک و درگاه
 
-نسخه 0.6.7 هسته پیامک را از سرویس ارسال جدا نگه می‌دارد. مسیر اصلی «واسط IPPanel SMS Pro GV» است و از همان تنظیمات امن افزونه واسط استفاده می‌کند؛ بنابراین نام کاربری یا رمز آن در Event Card Manager کپی یا ثبت نمی‌شود. Edge API و WP‑SMS نیز به‌عنوان Transportهای قابل انتخاب باقی مانده‌اند. اتصال مستقیم Legacy با همان تنظیمات Gravity فقط در مرکز آزمون ارائه می‌شود و درگاه عملیاتی نیست.
+نسخه 0.6.6 هسته پیامک را از سرویس ارسال جدا نگه می‌دارد. مسیر اصلی «واسط IPPanel SMS Pro GV» است و از همان تنظیمات امن افزونه واسط استفاده می‌کند؛ بنابراین نام کاربری یا رمز آن در Event Card Manager کپی یا ثبت نمی‌شود. Edge API و WP‑SMS نیز به‌عنوان Transportهای قابل انتخاب باقی مانده‌اند. اتصال مستقیم Legacy با همان تنظیمات Gravity فقط در مرکز آزمون ارائه می‌شود و درگاه عملیاتی نیست.
 
 در ورود به صفحه پیامک، تست اتصال به‌صورت غیرمسدودکننده اجرا می‌شود و موجودی با جداکننده هزارگان نمایش داده می‌شود. هر وضعیت پیامک روش ارسال مستقل دارد و می‌تواند قالب مشترک یا قالب جدا برای معرف و مهمان داشته باشد. سیاست پیامک از تنظیم سراسری به رویداد و سپس نوبت ارث می‌رسد. کتابخانه پترن، پترن مالی `is35i844i289qa9` را با متغیرهای `name`، `phone`، `pay` و `date` در اختیار تنظیمات قرار می‌دهد. لینک کارت با توکن کوتاه و امن ساخته می‌شود و لینک‌های بلند نسخه قبلی همچنان معتبرند.
 
@@ -94,10 +63,6 @@
 درگاه واقعی داخل این بسته پیکربندی نشده است. ثبت بدون درگاه با وضعیت مستقل `offline_confirmed` ذخیره می‌شود و هرگز به‌عنوان پرداخت بانکی موفق گزارش نمی‌شود. اتصال درگاه از فیلتر `ecm_payment_result` قابل توسعه است.
 
 ## مستندات
-
-- [یادداشت انتشار 0.6.7](docs/RELEASE-NOTES-0.6.7-FA.md)
-- [گزارش QA نسخه 0.6.7](docs/QA-REPORT-0.6.7-FA.md)
-- [قرارداد معماری فاز 0.7.0](docs/ROADMAP-WORKFLOW-0.7.0-FA.md)
 
 - [نصب و ارتقا](docs/INSTALLATION-UPGRADE-FA.md)
 - [آزمون پذیرش کارفرما](docs/EMPLOYER-ACCEPTANCE-TEST-FA.md)
@@ -127,26 +92,3 @@
 - [یادداشت انتشار پایدار 0.3.0](docs/RELEASE-NOTES-0.3.0-FA.md)
 
 مجوز: GPL-2.0-or-later. مجوز کتابخانه‌های QR و PDF در `THIRD-PARTY-NOTICES.md` قرار دارد.
-
-### 0.7.0-alpha.3 staging review and issuance bridge
-
-The fourth phase introduces a staging-only review queue, private receipt streaming,
-reasoned rejection/correction, and a transaction-guarded bridge to the canonical
-registration, guest and QR/card services. The optional `[ecm_tracking_lookup]`
-shortcode requires a **random tracking code and matching phone**, not phone alone.
-Workflow-registered public events now fail closed instead of falling through to
-Classic registration. Live card issuance and SMS are **separately disabled by
-default**, and public multi-step entry/OTP are not yet shipped. This is NOT a
-production release. See `docs/RELEASE-NOTES-0.7.0-alpha.3-FA.md` for safe staging
-flags, test plan and limitations.
-
-### 0.7.0-alpha.2 experimental Workflow preview
-
-For staging environments only. Administrators can edit versioned workflow steps and test form, agreement and private receipt submission. The Workflow flag is disabled by default, and **the public registration endpoint remains classic**. Set `ECM_PRIVATE_RECEIPT_DIR` to a writable directory *outside the webroot* before testing uploads. Review `docs/RELEASE-NOTES-0.7.0-alpha.2-FA.md` for the exact boundaries and manual QA procedure.
-
-
-## Workflow 0.7.0-alpha.4 (فاز ۵، آزمایشی)
-
-این انتشار یک فرم عمومی **فقط برای محیط Staging** به موتور چهارمرحله‌ای قبلی وصل می‌کند و اعلان‌های وضعیت را به صف پیامک موجود متصل می‌سازد. از این نسخه روی وب‌سایت ثبت‌نام فعال Production استفاده نکنید. فعال‌سازی Workflow در یک رویداد اختصاصی، مسیر Classic آن رویداد را می‌بندد؛ برای رویدادهای Classic رفتار قبلی ثابت است.
-
-برای راه‌اندازی، فایل `WORKFLOW-ALPHA4-FA.md` در همین بسته را بخوانید. به‌صورت پیش‌فرض، فرم عمومی، OTP و صدور کارت هر سه غیرفعال‌اند.

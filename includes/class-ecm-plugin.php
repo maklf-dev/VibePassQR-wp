@@ -15,18 +15,14 @@ final class ECM_Plugin {
 	public function boot(): void {
 		ECM_Capabilities::hooks();
 		ECM_Registration_Admin::hooks();
+		ECM_Test_Registration::hooks();
 		ECM_Diagnostics::hooks();
 		ECM_Activity::hooks();
 		ECM_Events::hooks();
-		ECM_Workflow_Staging::hooks();
-		ECM_Workflow_Review::hooks();
-		ECM_Workflow_Tracking::hooks();
-		ECM_Workflow_Public::hooks();
 		ECM_Tickets::hooks();
 		ECM_Operator::hooks();
 		ECM_Reports::hooks();
-		ECM_Analytics::hooks();
-		ECM_Import::hooks();
+		ECM_Comprehensive_Report::hooks();
 		ECM_Portal::hooks();
 		ECM_Card_Document::hooks();
 		add_action( 'init', array( $this, 'maybe_upgrade' ), 1 );
@@ -48,26 +44,13 @@ final class ECM_Plugin {
 	}
 
 	public function maybe_upgrade(): void {
-		$installed = (string) get_option( 'ecm_db_version', '' );
-		if ( ECM_VERSION === $installed || ( $installed && version_compare( $installed, ECM_VERSION, '>' ) ) ) {
-			return;
-		}
-		// Never run DDL in public registration, ticket, OTP or SMS requests.
-		// Site administrators complete the migration on a normal admin load.
-		if ( ! is_admin() || wp_doing_ajax() || ! current_user_can( 'manage_options' ) ) {
-			return;
-		}
-		if ( $installed && version_compare( $installed, '0.6.7', '>=' ) ) {
-			if ( ECM_Workflow_Schema::install() ) {
-				ECM_Capabilities::install();
+		if ( ECM_VERSION !== get_option( 'ecm_db_version' ) ) {
+			if ( '0.6.6.2' === ECM_VERSION && in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1' ), true ) ) {
+				// No schema changes: do not rebuild tables during active registrations.
 				update_option( 'ecm_db_version', ECM_VERSION, false );
-				ECM_Diagnostics::record( 'migration', 'Workflow schema installed', array( 'version' => ECM_VERSION ) );
+				return;
 			}
-			return;
-		}
-		// Older releases still require their original legacy migrations.
-		ECM_Activator::activate();
-		if ( ECM_VERSION === (string) get_option( 'ecm_db_version', '' ) ) {
+			ECM_Activator::activate();
 			ECM_Diagnostics::record( 'migration', 'Plugin schema upgraded', array( 'version' => ECM_VERSION ) );
 		}
 	}
