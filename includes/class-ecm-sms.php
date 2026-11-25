@@ -133,6 +133,7 @@ final class ECM_SMS {
 		$recipient   = $identity && ! empty( $identity->normalized_phone ) ? self::phone( (string) $identity->normalized_phone ) : self::phone( ECM_Utils::field_value( $data, (string) ( $event_config['sms_field'] ?? $settings['sms_field'] ?? 'mobile' ) ) );
 		if ( isset( $meta['recipient'] ) ) {
 			$recipient = self::phone( (string) $meta['recipient'] );
+			$meta['participant_phone'] = $recipient;
 			$participant_id = 0;
 			$identity = null;
 		}
@@ -160,6 +161,15 @@ final class ECM_SMS {
 		$vars['{card_link}'] = $needs_link && ( ! str_starts_with( $state, 'flow_' ) || in_array( $registration->payment_status, array( 'paid', 'not_required', 'offline_confirmed' ), true ) ) ? ECM_Upgrade::link( $registration, $link_participant ) : '';
 		$message = strtr( $template, $vars );
 		$payload = self::payload( $state, $recipient, $message, $vars, $settings, $registration );
+		if ( is_array( $payload ) && ! empty( $meta['reminder_rule'] ) ) {
+			$payload['_ecm_reminder'] = array(
+				'rule' => $meta['reminder_rule'], 'due' => $meta['reminder_due'], 'deadline' => $meta['reminder_deadline'],
+				'audience' => $meta['participant_type'], 'rule_hash' => hash( 'sha256', wp_json_encode( $meta['workflow_rule'] ) ),
+			);
+		}
+		if ( is_array( $payload ) && ! empty( $meta['explicit_manual_test'] ) ) {
+			$payload['_ecm_manual_test'] = true;
+		}
 		$transport_key = sanitize_key( (string) ( $settings['sms_transport'] ?? 'edge' ) );
 		if ( ! ECM_SMS_Transports::get( $transport_key ) ) {
 			$transport_key = 'edge';
@@ -218,7 +228,9 @@ final class ECM_SMS {
 	private static function effective_settings( object $registration, string $state, array $meta ): array {
 		$settings = ECM_Utils::settings();
 		if ( str_starts_with( $state, 'flow_' ) && is_array( $meta['workflow_rule'] ?? null ) ) {
-			self::apply_rule( $settings, $state, $meta['workflow_rule'] );
+			$rule = $meta['workflow_rule'];
+			$rule['pattern_profile'] = self::profile_id( (string) ( $rule['pattern_profile'] ?? '' ), (array) ( $settings['sms_pattern_profiles'] ?? array() ) );
+			self::apply_rule( $settings, $state, $rule );
 			return $settings;
 		}
 		$config   = ECM_Events::config_for_registration( $registration );
@@ -383,6 +395,9 @@ final class ECM_SMS {
 			foreach ( $param_map as $key => $value ) {
 				$key = sanitize_key( (string) $key );
 				if ( $key ) {
+					if ( str_starts_with( $state, 'flow_' ) && preg_match_all( '/\{[^{}]+\}/', (string) $value, $tokens ) && array_diff( $tokens[0], array_keys( $vars ) ) ) {
+						return new WP_Error( 'pattern_param_unavailable', 'پارامتر پترن «' . $key . '» به متغیری وابسته است که در این پرونده موجود نیست.' );
+					}
 					$resolved = sanitize_text_field( strtr( (string) $value, $vars ) );
 					if ( '' === trim( $resolved ) ) {
 						return new WP_Error( 'pattern_param_empty', 'پارامتر پترن «' . $key . '» مقدار ندارد.' );
@@ -418,6 +433,28 @@ final class ECM_SMS {
 		);
 	}
 
+	/** A stored library ID wins. An old provider code can be recovered if unique. */
+	public static function profile_id( string $value, array $profiles ): string {
+		$id = sanitize_key( $value );
+		if ( isset( $profiles[ $id ] ) || '' === $value ) { return $id; }
+		$matches = array_keys( array_filter( $profiles, static fn( $profile ) => ! empty( $profile['enabled'] ) && $value === ( $profile['code'] ?? '' ) ) );
+		return 1 === count( $matches ) ? (string) reset( $matches ) : $id;
+	}
+
+	public static function otp_parameter( array $profile ) {
+		if ( empty( $profile['enabled'] ) || empty( $profile['code'] ) ) {
+			return new WP_Error( 'otp_pattern_missing', 'پترن کد تأیید فعال یا کامل نیست.' );
+		}
+		$map = (array) ( $profile['params'] ?? array() );
+		$key = (string) array_key_first( $map );
+		if ( ! in_array( $profile['purpose'] ?? 'general', array( 'otp', 'general' ), true ) || ! empty( $profile['requires_payment'] ) ||
+			1 !== count( $map ) || ( 'code' !== $key && '{code}' !== $map[ $key ] ) ||
+			! in_array( $profile['param_types'][ $key ] ?? 'integer', array( 'integer', 'string' ), true ) ) {
+			return new WP_Error( 'otp_pattern_mapping', 'پترن OTP باید یک پارامتر داشته باشد که به {code} نگاشت شده باشد.' );
+		}
+		return $key;
+	}
+
 	/**
 	 * Send a security-sensitive pattern immediately. The actual OTP value is
 	 * never persisted in the queue, attempts table, diagnostics or audit log.
@@ -432,11 +469,14 @@ final class ECM_SMS {
 		if ( ! empty( $settings['sms_transport_paused'] ) ) {
 			return new WP_Error( 'sms_paused', 'ارسال پیامک موقتاً متوقف است.' );
 		}
-		$profiles = is_array( $settings['sms_pattern_profiles'] ?? null ) ? $settings['sms_pattern_profiles'] : array();
-		$profile_id = sanitize_key( $profile_id );
-		$profile = isset( $profiles[ $profile_id ] ) && is_array( $profiles[ $profile_id ] ) ? $profiles[ $profile_id ] : array();
-		if ( ! $profile || empty( $profile['enabled'] ) || empty( $profile['code'] ) ) {
-			return new WP_Error( 'otp_pattern_missing', 'پترن کد تأیید فعال یا کامل نیست.' );
+		$profiles = (array) ( $settings['sms_pattern_profiles'] ?? array() );
+		$profile_id = self::profile_id( $profile_id, $profiles );
+		$profile = (array) ( $profiles[ $profile_id ] ?? array() );
+		$parameter = self::otp_parameter( $profile );
+		if ( is_wp_error( $parameter ) ) { return $parameter; }
+		$code = ECM_Utils::normalize_digits( (string) ( $params['code'] ?? '' ) );
+		if ( ! preg_match( '/^\d{6}$/D', $code ) ) {
+			return new WP_Error( 'pattern_param_type', 'کد تأیید باید شش رقم باشد.' );
 		}
 		$recipient = self::phone( $recipient );
 		if ( ! $recipient ) {
@@ -456,20 +496,7 @@ final class ECM_SMS {
 		if ( 'edge' === $transport_key && ! $sender ) {
 			return new WP_Error( 'invalid_sender', 'شماره خط ارسال پترن معتبر نیست.' );
 		}
-		$allowed_params = is_array( $profile['params'] ?? null ) ? array_keys( $profile['params'] ) : array_keys( $params );
-		$types = is_array( $profile['param_types'] ?? null ) ? $profile['param_types'] : array();
-		$resolved = array();
-		foreach ( $allowed_params as $key ) {
-			$key = sanitize_key( (string) $key );
-			$value = sanitize_text_field( (string) ( $params[ $key ] ?? '' ) );
-			if ( ! $key || '' === $value ) {
-				return new WP_Error( 'pattern_param_empty', 'پارامتر الزامی پترن مقدار ندارد.' );
-			}
-			if ( 'integer' === ( $types[ $key ] ?? '' ) && ! preg_match( '/^\d+$/', ECM_Utils::normalize_digits( $value ) ) ) {
-				return new WP_Error( 'pattern_param_type', 'پارامتر عددی پترن معتبر نیست.' );
-			}
-			$resolved[ $key ] = $value;
-		}
+		$resolved = array( $parameter => $code );
 		$payload = array(
 			'sending_type' => 'pattern',
 			'from_number'  => $sender,
@@ -560,6 +587,23 @@ final class ECM_SMS {
 		if ( ! is_array( $payload ) ) {
 			self::finish( $row, 'failed', 'payload_invalid', 0, '', 'ساختار پیام ذخیره‌شده معتبر نیست.', $attempt_id, 0, $transport_key );
 			return;
+		}
+		$reminder = $payload['_ecm_reminder'] ?? null;
+		$manual_test = ! empty( $payload['_ecm_manual_test'] );
+		unset( $payload['_ecm_reminder'], $payload['_ecm_manual_test'] );
+		$registration = ! empty( $row->registration_id ) ? ECM_DB::registration( (int) $row->registration_id ) : null;
+		if ( $registration && ! $manual_test && ! empty( $registration->is_test ) && str_starts_with( $state, 'flow_' ) ) {
+			$flow = ECM_Flow::row( (int) $registration->id );
+			if ( $flow && ! empty( ECM_Flow::decode( $flow->details )['session_epoch'] ) ) {
+				self::finish( $row, 'cancelled', 'registration_marked_test', 0, '', 'پرونده مرحله‌ای تستی شده است.', $attempt_id, 0, $transport_key );
+				return;
+			}
+		}
+		if ( null !== $reminder ) {
+			if ( ! $registration || ! is_array( $reminder ) || ! ECM_Flow_Reminders::valid_job( $registration, $reminder ) ) {
+				self::finish( $row, 'cancelled', 'reminder_no_longer_due', 0, '', 'شرایط ارسال یادآوری تغییر کرده است.', $attempt_id, 0, $transport_key );
+				return;
+			}
 		}
 		$result = $transport->send( $payload );
 		if ( is_wp_error( $result ) ) {
@@ -1360,6 +1404,10 @@ final class ECM_SMS {
 		if ( 'otp_recovery' === $notification_type ) {
 			wp_die( 'کد تأیید منقضی یا ناموفق قابل ارسال مجدد از گزارش نیست؛ کاربر باید از صفحه بازیابی کد تازه دریافت کند.' );
 		}
+		$error = $wpdb->get_var( $wpdb->prepare( 'SELECT error_code FROM ' . ECM_DB::table( 'sms' ) . ' WHERE id=%d', $id ) );
+		if ( in_array( $error, array( 'registration_marked_test', 'reminder_no_longer_due' ), true ) ) {
+			wp_die( 'شرایط ارسال این پیامک دیگر برقرار نیست.' );
+		}
 		$transport = sanitize_key( (string) ( ECM_Utils::settings()['sms_transport'] ?? 'edge' ) );
 		$wpdb->update( ECM_DB::table( 'sms' ), array( 'status' => 'queued', 'transport' => $transport, 'error_code' => null, 'next_attempt_at' => null, 'updated_at' => ECM_Utils::now_utc() ), array( 'id' => $id ), array( '%s', '%s', '%s', '%s', '%s' ), array( '%d' ) );
 		wp_schedule_single_event( time() + 1, 'ecm_sms_job', array( $id ) );
@@ -1529,7 +1577,7 @@ final class ECM_SMS {
 				<form class="ecm-panel is-active" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="ecm_sms_test"><input type="hidden" name="test" value="connection"><?php wp_nonce_field('ecm_sms_test'); ?><h2>۱. اتصال و موجودی</h2><label class="ecm-setting"><span>روش آزمون</span><select name="test_transport"><?php foreach($transports as $key=>$item): ?><option value="<?php echo esc_attr($key); ?>" <?php selected($selected_transport_key,$key); ?>><?php echo esc_html($item->label()); ?></option><?php endforeach; ?></select></label><button class="button button-primary">اجرای آزمون</button></form>
 				<form class="ecm-panel is-active" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="ecm_sms_test"><input type="hidden" name="test" value="send"><?php wp_nonce_field('ecm_sms_test'); ?><h2>۲. متن یا پترن</h2><label class="ecm-setting"><span>درگاه</span><select name="test_transport"><?php foreach($transports as $key=>$item): ?><option value="<?php echo esc_attr($key); ?>" <?php selected($selected_transport_key,$key); ?>><?php echo esc_html($item->label()); ?></option><?php endforeach; ?></select></label><label class="ecm-setting"><span>شماره گیرنده</span><input type="tel" dir="ltr" name="recipient" placeholder="09xxxxxxxxx" required></label><label class="ecm-setting"><span>روش تست</span><select name="test_send_mode"><option value="webservice">متن آزاد</option><option value="pattern">پترن</option></select></label><label class="ecm-setting"><span>متن آزاد</span><textarea name="test_message" rows="2">پیام آزمایشی افزونه کارت رویداد</textarea></label><label class="ecm-setting"><span>پترن کتابخانه</span><select name="test_pattern_profile"><option value="">کد دستی</option><?php foreach((array)($settings['sms_pattern_profiles']??array()) as $pid=>$profile): ?><option value="<?php echo esc_attr($pid); ?>"><?php echo esc_html($profile['label']??$pid); ?></option><?php endforeach; ?></select></label><label class="ecm-setting"><span>کد پترن</span><input type="text" dir="ltr" name="test_pattern_code" value="is35i844i289qa9"></label><label class="ecm-setting"><span>پارامترهای تست</span><textarea name="test_pattern_params" dir="ltr" rows="5">name=کاربر آزمایشی&#10;phone=09120000000&#10;pay=TEST-12345&#10;date=1405/07/27 21:00</textarea></label><button class="button button-primary">ارسال آزمایشی</button></form>
 				<form class="ecm-panel is-active" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="ecm_sms_test"><input type="hidden" name="test" value="link"><?php wp_nonce_field('ecm_sms_test'); ?><h2>۳. لینک واقعی کارت</h2><label class="ecm-setting"><span>درگاه</span><select name="test_transport"><?php foreach($transports as $key=>$item): ?><option value="<?php echo esc_attr($key); ?>" <?php selected($selected_transport_key,$key); ?>><?php echo esc_html($item->label()); ?></option><?php endforeach; ?></select></label><label class="ecm-setting"><span>شماره گیرنده</span><input type="tel" dir="ltr" name="recipient" required></label><label class="ecm-setting"><span>شناسه ثبت‌نام</span><input type="number" min="1" name="test_registration_id" required></label><label class="ecm-setting"><span>شناسه شرکت‌کننده؛ برای مهمان</span><input type="number" min="1" name="test_participant_id"><small>خالی یعنی کارت معرف و همه مهمانان.</small></label><label class="ecm-setting"><span>متن پیام</span><textarea rows="4" name="test_link_message">{name} عزیز&#10;کارت شما آماده است:&#10;{card_link}&#10;کد پیگیری: {tracking_code}</textarea></label><button class="button button-primary">ارسال لینک</button></form>
-				<form class="ecm-panel is-active ecm-test-otp" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="ecm_sms_test"><input type="hidden" name="test" value="otp"><?php wp_nonce_field('ecm_sms_test'); ?><h2>۴. پترن OTP</h2><p>یک کد شش‌رقمی تصادفی با مسیر عملیاتی ذخیره‌شده ارسال می‌شود و خود کد در گزارش ذخیره نخواهد شد.</p><label class="ecm-setting"><span>شماره گیرنده</span><input type="tel" dir="ltr" name="recipient" placeholder="09xxxxxxxxx" required></label><label class="ecm-setting"><span>پترن OTP</span><select name="test_otp_profile"><?php foreach((array)($settings['sms_pattern_profiles']??array()) as $pid=>$profile): if(empty($profile['enabled'])||!in_array($profile['purpose']??'general',array('general','otp'),true))continue; ?><option value="<?php echo esc_attr($pid); ?>" <?php selected($pid,'recovery_otp'); ?>><?php echo esc_html($profile['label']??$pid); ?></option><?php endforeach; ?></select></label><button class="button button-primary">ارسال کد آزمایشی</button></form>
+				<form class="ecm-panel is-active ecm-test-otp" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="ecm_sms_test"><input type="hidden" name="test" value="otp"><?php wp_nonce_field('ecm_sms_test'); ?><h2>۴. پترن OTP</h2><p>یک کد شش‌رقمی تصادفی با مسیر عملیاتی ذخیره‌شده ارسال می‌شود و خود کد در گزارش ذخیره نخواهد شد.</p><label class="ecm-setting"><span>شماره گیرنده</span><input type="tel" dir="ltr" name="recipient" placeholder="09xxxxxxxxx" required></label><label class="ecm-setting"><span>پترن OTP</span><select name="test_otp_profile"><?php foreach((array)($settings['sms_pattern_profiles']??array()) as $pid=>$profile): if ( is_wp_error( self::otp_parameter( $profile ) ) ) { continue; } ?><option value="<?php echo esc_attr($pid); ?>" <?php selected($pid,'recovery_otp'); ?>><?php echo esc_html($profile['label']??$pid); ?></option><?php endforeach; ?></select></label><button class="button button-primary">ارسال کد آزمایشی</button></form>
 			</div><details class="ecm-advanced-box"><summary>تشخیص عمیق Edge</summary><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><input type="hidden" name="action" value="ecm_sms_test"><input type="hidden" name="test" value="deep"><input type="hidden" name="test_transport" value="edge"><?php wp_nonce_field('ecm_sms_test'); ?><p>این تست فقط برای Edge است و با IP خارجی هاست ممکن است شکست بخورد.</p><label><input type="checkbox" name="pause_on_failure" value="1"> در صورت شکست، صف خودکار متوقف شود</label> <button class="button">اجرای تشخیص</button></form></details></section>
 
 			<section id="ecm-sms-logs" class="ecm-panel is-active"><div class="ecm-panel__title"><div><h2>۵۰ ارسال اخیر</h2><p>accepted یعنی درگاه درخواست را پذیرفته است؛ در واسط‌های قدیمی الزاماً به معنی تحویل نهایی نیست.</p></div></div><div class="ecm-table-scroll"><table class="widefat striped ecm-admin-table"><thead><tr><th>ID</th><th>شخص</th><th>رویداد / نوبت</th><th>نوع</th><th>درگاه</th><th>گیرنده</th><th>وضعیت</th><th>HTTP</th><th>شناسه/خطا</th><th>تلاش</th><th>زمان</th><th>عملیات</th></tr></thead><tbody><?php if ( ! $logs ) : ?><tr><td colspan="12">هنوز گزارشی وجود ندارد.</td></tr><?php endif; ?><?php foreach ( $logs as $log ) : ?><tr><td><?php echo esc_html( $log->id ); ?></td><td><strong><?php echo esc_html( $log->full_name ?: 'ثبت‌نام #' . $log->registration_id ); ?></strong><br><small><?php echo esc_html( 'guest' === ( $log->participant_type ?? '' ) ? 'مهمان' : ( $log->participant_id ? 'معرف' : 'سیستمی' ) ); ?><?php echo $log->participant_id ? ' · P' . esc_html( $log->participant_id ) : ''; ?></small></td><td><?php echo esc_html( $log->event_title ?: '—' ); ?><?php if ( $log->session_title ) : ?><br><small><?php echo esc_html( $log->session_title ); ?></small><?php endif; ?></td><td><?php echo esc_html( self::notification_label( (string) ( $log->notification_type ?: 'قدیمی' ) ) ); ?></td><td><?php echo esc_html( $log->transport ?: 'edge' ); ?></td><td><bdi><?php echo esc_html( $log->recipient ); ?></bdi></td><td><span class="ecm-badge ecm-badge--<?php echo esc_attr( $log->status ); ?>"><?php echo esc_html( $log->status ); ?></span></td><td><?php echo esc_html( $log->http_code ?: '—' ); ?></td><td><?php echo esc_html( $log->provider_id ?: $log->error_code ?: '—' ); ?></td><td><?php echo esc_html( $log->attempts ); ?></td><td><?php echo esc_html( ECM_Utils::utc_to_local( $log->created_at ) ); ?></td><td><?php if ( 'otp_recovery' !== $log->notification_type && in_array( $log->status, array( 'failed', 'unknown' ), true ) ) : ?><form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><input type="hidden" name="action" value="ecm_sms_retry"><input type="hidden" name="sms_id" value="<?php echo esc_attr( $log->id ); ?>"><?php wp_nonce_field( 'ecm_sms_retry_' . $log->id ); ?><button class="button button-small">تلاش مجدد</button></form><?php else : ?>—<?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div></section>

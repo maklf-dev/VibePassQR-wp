@@ -15,6 +15,7 @@ wp_clear_scheduled_hook('ecm_sms_sweep');
 wp_unschedule_hook('ecm_sms_job');
 wp_clear_scheduled_hook('ecm_migrate_participants');
 wp_clear_scheduled_hook('ecm_workflow_reminders');
+wp_unschedule_hook('ecm_workflow_replan_reminders');
 
 if ( empty( $settings['delete_data_on_uninstall'] ) ) {
 	return;

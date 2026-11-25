@@ -10,6 +10,7 @@ final class ECM_Flow {
 		ECM_Flow_Public::hooks();
 		ECM_Flow_Admin::hooks();
 		add_action( self::CRON, array( __CLASS__, 'reminders' ) );
+		add_action( ECM_Flow_Reminders::REPLAN, array( 'ECM_Flow_Reminders', 'replan' ), 10, 3 );
 		add_action( 'init', array( __CLASS__, 'schedule' ), 24 );
 	}
 
@@ -210,6 +211,7 @@ final class ECM_Flow {
 					'snapshot' => wp_json_encode( $settings ), 'details' => wp_json_encode( array( 'form' => $data, 'guests' => $initial['guests'] ?? array(), 'extra_index' => 0 ) ),
 					'residence' => (string) ( $data['residence_city'] ?? '' ), 'priority_city' => (string) ( $data['priority_city'] ?? '' ),
 					'available_cities' => wp_json_encode( array_values( (array) ( $data['available_cities'] ?? array() ) ), JSON_UNESCAPED_UNICODE ),
+					'next_reminder' => ! $test ? ECM_Flow_Reminders::next( $settings, $state, $now, array() ) : null,
 					'review_note' => '', 'updated_at' => $now,
 				) ) );
 				return self::row( $id );
@@ -367,10 +369,11 @@ final class ECM_Flow {
 				if ( $registration_updates ) {
 					self::write( $wpdb->update( ECM_DB::table( 'registrations' ), $registration_updates + array( 'updated_at' => $now ), array( 'id' => $id ) ) );
 				}
+				$policy = self::settings( (int) $row->event_id );
 				$updates += array(
 					'state' => $next, 'revision' => $revision + 1, 'details' => wp_json_encode( $details, JSON_UNESCAPED_UNICODE ),
 					'updated_at' => $now, 'reminder_no' => 0,
-					'next_reminder' => ! empty( $config['reminders'] ) && empty( $registration->is_test ) && in_array( $next, array( 'payment', 'covenant', 'decision', 'extra' ), true ) ? gmdate( 'Y-m-d H:i:s', time() + 2 * HOUR_IN_SECONDS ) : null,
+					'next_reminder' => empty( $registration->is_test ) ? ECM_Flow_Reminders::next( $policy, $next, $now, $details ) : null,
 				);
 				self::write( $wpdb->update( ECM_DB::table( 'workflow' ), $updates, array( 'registration_id' => $id ) ) );
 				ECM_Utils::log( $id, 'workflow_' . $command, array( 'from' => $state, 'to' => $next, 'revision' => $revision + 1, 'receipt_id' => (int) ( $updates['receipt_id'] ?? $row->receipt_id ) ) + ( 'edit_workflow' === $command ? $details['last_edit'] : array() ) );
@@ -395,11 +398,11 @@ final class ECM_Flow {
 		return $data;
 	}
 
-	public static function notify( object $row, string $state, string $key, bool $explicit_manual_test = false ): void {
+	public static function notify( object $row, string $state, string $key, bool $explicit_manual_test = false, ?array $custom_rules = null, array $context = array() ): void {
 		$id = (int) $row->registration_id;
 		$settings = self::settings( (int) $row->event_id );
 		$details = self::decode( $row->details );
-		$rules = (array) ( $settings['sms'][ $state ] ?? array() );
+		$rules = $custom_rules ?? (array) ( $settings['sms'][ $state ] ?? array() );
 		foreach ( array( 'primary', 'guest' ) as $audience ) {
 			$rule = (array) ( $rules[ $audience ] ?? array() );
 			if ( empty( $rule['enabled'] ) ) {
@@ -418,7 +421,7 @@ final class ECM_Flow {
 				$targets = array_map( static fn( $guest ) => array( 'recipient' => $guest['phone'], 'participant_name' => $guest['name'] ), (array) ( $details['guests'] ?? array() ) );
 			}
 			foreach ( $targets as $index => $target ) {
-				ECM_SMS::queue( 'flow_' . $state, $id, "workflow-{$id}-{$state}-{$key}-{$audience}-{$index}", $target + array(
+				ECM_SMS::queue( 'flow_' . $state, $id, "workflow-{$id}-{$state}-{$key}-{$audience}-{$index}", $target + $context + array(
 					'workflow_rule' => $rule, 'participant_type' => $audience, 'workflow_note' => $row->review_note, 'explicit_manual_test' => $explicit_manual_test,
 				) );
 			}
@@ -438,17 +441,10 @@ final class ECM_Flow {
 				if ( ! $fresh || $fresh->next_reminder !== $row->next_reminder || (int) $fresh->revision !== (int) $row->revision ) {
 					return false;
 				}
-				$settings = self::settings( (int) $row->event_id );
-				$count = (int) $row->reminder_no + 1;
 				$event = ECM_Events::event( (int) $row->event_id );
-				$next = null;
-				if ( ! empty( $settings['reminders'] ) && ECM_Events::allows( $event, 'registration' ) ) {
-					self::notify( $fresh, 'reminder_' . $fresh->state, $fresh->revision . '-' . $count );
-					$deadline = strtotime( (string) ( $settings['reminder_deadline'] ?? '' ) . ' UTC' );
-					$next = 1 === $count ? gmdate( 'Y-m-d H:i:s', strtotime( $fresh->updated_at . ' UTC' ) + DAY_IN_SECONDS ) :
-						( 2 === $count && $deadline && $deadline - HOUR_IN_SECONDS > time() ? gmdate( 'Y-m-d H:i:s', $deadline - HOUR_IN_SECONDS ) : null );
-				}
-				self::write( $wpdb->update( $table, array( 'reminder_no' => $count, 'next_reminder' => $next ), array( 'registration_id' => (int) $row->registration_id ) ) );
+				$registration = ECM_DB::registration( (int) $row->registration_id );
+				$updates = $event && $registration ? ECM_Flow_Reminders::process( $fresh, self::settings( (int) $row->event_id ), $event, $registration ) : array( 'next_reminder' => null );
+				self::write( $wpdb->update( $table, $updates, array( 'registration_id' => (int) $row->registration_id ) ) );
 				return true;
 			} );
 		}

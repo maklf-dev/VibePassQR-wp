@@ -735,7 +735,7 @@ final class ECM_Events {
 				<div class="ecm-subpanel ecm-otp-admin-box">
 					<div class="ecm-panel__title"><div><h3>بازیابی امن با کد پیامکی</h3><p>در حالت فعال، کارت فقط پس از تأیید کد یک‌بارمصرف نمایش داده می‌شود. ارسال OTP فوری است و وارد صف اعلان‌های عادی نمی‌شود.</p></div><label class="ecm-switch"><input type="checkbox" name="event_settings[recovery_otp_enabled]" value="1" <?php checked( ! empty( $config['recovery_otp_enabled'] ) ); ?>><span>OTP الزامی باشد</span></label></div>
 					<div class="ecm-admin-grid ecm-admin-grid--3">
-						<label class="ecm-setting"><span>پترن OTP</span><select name="event_settings[recovery_otp_pattern_profile]"><?php foreach ( $pattern_profiles as $profile_id => $profile ) : if ( empty( $profile['enabled'] ) || ! in_array( $profile['purpose'] ?? 'general', array( 'general', 'otp' ), true ) ) { continue; } ?><option value="<?php echo esc_attr( $profile_id ); ?>" <?php selected( $config['recovery_otp_pattern_profile'] ?? 'recovery_otp', $profile_id ); ?>><?php echo esc_html( $profile['label'] ?? $profile_id ); ?></option><?php endforeach; ?></select><small>پترن باید پارامتر عددی <code>code</code> داشته باشد.</small></label>
+						<label class="ecm-setting"><span>پترن OTP</span><select name="event_settings[recovery_otp_pattern_profile]"><?php foreach ( $pattern_profiles as $profile_id => $profile ) : if ( is_wp_error( ECM_SMS::otp_parameter( $profile ) ) && ( $config['recovery_otp_pattern_profile'] ?? 'recovery_otp' ) !== $profile_id ) { continue; } ?><option value="<?php echo esc_attr( $profile_id ); ?>" <?php selected( $config['recovery_otp_pattern_profile'] ?? 'recovery_otp', $profile_id ); ?>><?php echo esc_html( $profile['label'] ?? $profile_id ); ?></option><?php endforeach; ?></select><small>پترن باید یک پارامتر نگاشت‌شده به <code>{code}</code> داشته باشد.</small></label>
 						<label class="ecm-setting"><span>اعتبار کد (ثانیه)</span><input type="number" min="120" max="900" name="event_settings[recovery_otp_expiry]" value="<?php echo esc_attr( absint( $config['recovery_otp_expiry'] ?? 300 ) ); ?>"><small>پیشنهادی: ۳۰۰ ثانیه.</small></label>
 						<label class="ecm-setting"><span>فعال‌شدن ارسال مجدد (ثانیه)</span><input type="number" min="30" max="870" name="event_settings[recovery_otp_resend]" value="<?php echo esc_attr( absint( $config['recovery_otp_resend'] ?? 120 ) ); ?>"><small>پیشنهادی: ۱۲۰ ثانیه.</small></label>
 						<label class="ecm-setting"><span>حداکثر تلاش ورود کد</span><input type="number" min="3" max="10" name="event_settings[recovery_otp_max_attempts]" value="<?php echo esc_attr( absint( $config['recovery_otp_max_attempts'] ?? 5 ) ); ?>"></label>
@@ -895,6 +895,15 @@ final class ECM_Events {
 			ECM_Tools::validate_sessions( $session_rows );
 		}
 		self::save_sessions( $id, $session_rows );
+		if ( $existing_event && ! self::allows( $existing_event, 'registration' ) && self::allows( self::event( $id ), 'registration' ) ) {
+			$workflow = ECM_Flow::settings( $id );
+			if ( ! empty( $workflow['reminders'] ) && isset( $workflow['reminder_rules'] ) ) {
+				$workflow['reminder_rules_since'] = time();
+				$workflow['reminder_plan_version'] = ++$workflow['version'];
+				update_option( 'ecm_workflow_event_' . $id, $workflow, false );
+				ECM_Flow_Reminders::queue_replan( $id, $workflow['reminder_plan_version'] );
+			}
+		}
 		ECM_Diagnostics::record( 'system', 'Event definition saved', array( 'event_id' => $id, 'attendance_mode' => $mode ) );
 		wp_safe_redirect( add_query_arg( array( 'page' => 'ecm-events', 'edit' => $id, 'saved' => 1 ), admin_url( 'admin.php' ) ) );
 		exit;

@@ -50,7 +50,11 @@ final class ECM_Flow_Public {
 
 	private static function session( int $event_id ): array {
 		$token = self::token( 'ecm_flow_session_' . $event_id );
-		return $token ? (array) get_transient( 'ecm_flow_s_' . hash( 'sha256', $token ) ) : array();
+		$session = $token ? (array) get_transient( 'ecm_flow_s_' . hash( 'sha256', $token ) ) : array();
+		if ( empty( $session['id'] ) ) { return array(); }
+		$registration = ECM_DB::registration( (int) $session['id'] );
+		$row = $registration ? ECM_Flow::row( (int) $registration->id ) : null;
+		return $registration && (int) $registration->event_id === $event_id && ( ! $row || ( empty( $registration->is_test ) && ( $session['session_epoch'] ?? '' ) === ( ECM_Flow::decode( $row->details )['session_epoch'] ?? '' ) ) ) ? $session : array();
 	}
 
 	public static function owns( int $event_id, int $id ): bool {
@@ -60,7 +64,9 @@ final class ECM_Flow_Public {
 
 	private static function grant( int $event_id, int $id ): bool {
 		$token = bin2hex( random_bytes( 24 ) );
-		if ( ! set_transient( 'ecm_flow_s_' . hash( 'sha256', $token ), array( 'id' => $id ), HOUR_IN_SECONDS ) ) {
+		$row = ECM_Flow::row( $id );
+		$session_epoch = $row ? ( ECM_Flow::decode( $row->details )['session_epoch'] ?? '' ) : '';
+		if ( ! set_transient( 'ecm_flow_s_' . hash( 'sha256', $token ), array( 'id' => $id, 'session_epoch' => $session_epoch ), HOUR_IN_SECONDS ) ) {
 			return false;
 		}
 		self::cookie( 'ecm_flow_session_' . $event_id, $token, HOUR_IN_SECONDS );

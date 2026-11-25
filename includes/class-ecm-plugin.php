@@ -46,7 +46,7 @@ final class ECM_Plugin {
 
 	public function maybe_upgrade(): void {
 		if ( ECM_VERSION !== get_option( 'ecm_db_version' ) ) {
-			if ( in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1', '0.6.6.2', '0.7.0' ), true ) ) {
+			if ( in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1', '0.6.6.2', '0.7.0', '0.7.1' ), true ) ) {
 				if ( ECM_Flow::ready() || ECM_Flow::install() ) {
 					update_option( 'ecm_db_version', ECM_VERSION, false );
 				}

@@ -35,45 +35,63 @@ final class ECM_Registration_Admin {
 			self::redirect( 'invalid', 0 );
 		}
 
+		$skipped = 0;
 		if ( 'delete' === $operation ) {
 			if ( '1' !== (string) ( $_POST['confirm_delete'] ?? '' ) ) {
 				self::redirect( 'confirm_required', 0 );
 			}
 			$count = self::delete_registrations( $ids );
 		} else {
-			$count = self::set_test_status( $ids, 'mark_test' === $operation );
+			list( $count, $skipped ) = self::set_test_status( $ids, 'mark_test' === $operation );
 		}
 
 		ECM_Diagnostics::record(
 			'registration_admin',
 			'Registration bulk operation completed',
-			array( 'operation' => $operation, 'count' => $count, 'user_id' => get_current_user_id() )
+			array( 'operation' => $operation, 'count' => $count, 'skipped' => $skipped, 'user_id' => get_current_user_id() )
 		);
-		self::redirect( $operation, $count );
+		self::redirect( $operation, $count, $skipped );
 	}
 
-	private static function set_test_status( array $ids, bool $is_test ): int {
+	private static function set_test_status( array $ids, bool $is_test ): array {
 		global $wpdb;
 		$table = ECM_DB::table( 'registrations' );
-		$list  = implode( ',', array_map( 'absint', $ids ) );
-		if ( ECM_Flow::ready() ) {
-			$workflow = ECM_DB::table( 'workflow' );
-			if ( $wpdb->get_var( "SELECT registration_id FROM {$workflow} WHERE registration_id IN ({$list}) LIMIT 1" ) ) {
-				wp_die( 'نوع اصلی یا تستی پرونده مرحله‌ای در زمان ساخت انتخاب می‌شود.', '', array( 'response' => 409, 'back_link' => true ) );
-			}
+		$workflow = ECM_DB::table( 'workflow' );
+		$sms = ECM_DB::table( 'sms' );
+		$count = $skipped = 0;
+		foreach ( $ids as $id ) {
+			$result = ECM_Flow::atomic( static function () use ( $wpdb, $table, $workflow, $sms, $id, $is_test ) {
+				$row = ECM_Flow::row( $id, true );
+				$registration = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id=%d FOR UPDATE", $id ) );
+				if ( ! $registration || (bool) $registration->is_test === $is_test ) { return false; }
+				$updates = array( 'is_test' => (int) $is_test, 'updated_at' => ECM_Utils::now_utc() );
+				if ( $is_test ) { $updates['dedupe_phone_hash'] = null; }
+				if ( $row ) {
+					$details = ECM_Flow::decode( $row->details );
+					$phone = ECM_Events::normalize_phone( (string) ( $details['form']['mobile'] ?? '' ) );
+					$owner = ! $is_test && $phone ? ECM_Flow::by_phone( (int) $row->event_id, $phone ) : null;
+					if ( ! $is_test && ( ! $phone || ( $owner && (int) $owner->registration_id !== $id ) ) ) {
+						return new WP_Error( 'workflow_phone_conflict', 'شماره پرونده معتبر نیست یا پرونده اصلی دیگری با این شماره وجود دارد.' );
+					}
+					$details['session_epoch'] = wp_generate_uuid4();
+					$next = $is_test ? null : ECM_Flow_Reminders::next( ECM_Flow::settings( (int) $row->event_id ), $row->state, $row->updated_at, $details );
+					ECM_Flow::write( $wpdb->update( $workflow, array(
+						'phone_hash' => $is_test ? null : ECM_Flow::phone_hash( $phone ),
+						'revision' => (int) $row->revision + 1, 'next_reminder' => $next,
+						'reminder_no' => 0, 'details' => wp_json_encode( $details, JSON_UNESCAPED_UNICODE ),
+					), array( 'registration_id' => $id ) ) );
+					if ( $is_test ) {
+						ECM_Flow::write( $wpdb->query( $wpdb->prepare( "UPDATE {$sms} SET status='cancelled',error_code='registration_marked_test',next_attempt_at=NULL,updated_at=%s WHERE registration_id=%d AND status IN ('queued','retry_wait','paused')", ECM_Utils::now_utc(), $id ) ) );
+					}
+				}
+				ECM_Flow::write( $wpdb->update( $table, $updates, array( 'id' => $id ) ) );
+				ECM_Utils::log( $id, 'registration_test_status_changed', array( 'is_test' => $is_test, 'actor' => get_current_user_id() ) );
+				return true;
+			} );
+			if ( is_wp_error( $result ) ) { ++$skipped; }
+			if ( true === $result ) { ++$count; }
 		}
-		if ( $is_test ) {
-			$result = $wpdb->query( "UPDATE {$table} SET is_test=1,dedupe_phone_hash=NULL,updated_at=UTC_TIMESTAMP() WHERE id IN ({$list})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		} else {
-			// Duplicate checks still use the participant identity when a test flag is
-			// removed. Keeping the hash NULL avoids introducing a unique-key conflict
-			// when this phone was intentionally used more than once during testing.
-			$result = $wpdb->query( "UPDATE {$table} SET is_test=0,updated_at=UTC_TIMESTAMP() WHERE id IN ({$list})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		}
-		if ( false === $result ) {
-			wp_die( 'تغییر وضعیت ثبت‌نام‌ها انجام نشد. دیتابیس را بررسی کنید.' );
-		}
-		return (int) $result;
+		return array( $count, $skipped );
 	}
 
 	/** Never allow test tooling to delete a live registration, even with a forged ID. */
@@ -154,11 +172,11 @@ final class ECM_Registration_Admin {
 		return $base && $path && str_starts_with( $path, trailingslashit( $base ) ) ? $path : '';
 	}
 
-	private static function redirect( string $operation, int $count ): void {
+	private static function redirect( string $operation, int $count, int $skipped = 0 ): void {
 		$fallback = admin_url( 'admin.php?page=ecm-reports&ecm_view=registrations' );
 		$return   = wp_validate_redirect( wp_unslash( $_POST['return_url'] ?? '' ), $fallback );
-		$return   = remove_query_arg( array( 'ecm_bulk_result', 'ecm_bulk_count' ), $return );
-		wp_safe_redirect( add_query_arg( array( 'ecm_bulk_result' => $operation, 'ecm_bulk_count' => max( 0, $count ) ), $return ) );
+		$return   = remove_query_arg( array( 'ecm_bulk_result', 'ecm_bulk_count', 'ecm_bulk_skipped' ), $return );
+		wp_safe_redirect( add_query_arg( array( 'ecm_bulk_result' => $operation, 'ecm_bulk_count' => max( 0, $count ), 'ecm_bulk_skipped' => $skipped ), $return ) );
 		exit;
 	}
 }

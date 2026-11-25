@@ -21,3 +21,8 @@
 .ecm-scope-picker .ecm-scope-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:8px;margin:10px 0}
 .ecm-report-storage,.ecm-edit-summary{display:flex;flex-wrap:wrap;gap:12px;margin-block:14px}
 .ecm-report-storage span,.ecm-edit-summary span{background:#eaf3f8;border:1px solid #cedbe5;border-radius:10px;padding:8px 12px;color:#0b1f46}
+.ecm-workflow-admin .ecm-code-editor{direction:ltr;text-align:left;unicode-bidi:plaintext;font-family:ui-monospace,monospace;tab-size:2}
+.ecm-flow-config-row{border:1px solid #cedbe5;border-radius:8px;padding:12px;margin-block:12px;min-width:0}
+.ecm-flow-config-row legend{font-weight:700;padding-inline:6px}
+.ecm-flow-offset,.ecm-flow-row-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.ecm-flow-offset input[type=number]{width:7rem}

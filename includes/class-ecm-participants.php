@@ -132,13 +132,15 @@ final class ECM_Participants {
 		$people        = ECM_DB::table( 'people' );
 		$participants  = ECM_DB::table( 'participants' );
 		$registrations = ECM_DB::table( 'registrations' );
+		$workflow = ECM_DB::table( 'workflow' );
+		$recovery_scope = ECM_Flow::ready() ? " AND (r.is_test=0 OR NOT EXISTS (SELECT 1 FROM {$workflow} w WHERE w.registration_id=r.id))" : '';
 		$where_event   = $event_id ? $wpdb->prepare( ' AND p.event_id=%d', $event_id ) : '';
 		$hash          = hash_hmac( 'sha256', $phone, wp_salt( 'auth' ) );
 		$tracking_code = strtoupper( trim( ECM_Utils::normalize_digits( $tracking_code ) ) );
 		if ( $tracking_code ) {
 			$row = $wpdb->get_row(
 				$wpdb->prepare(
-					"SELECT p.* FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE pe.phone_hash=%s AND p.public_id=%s AND p.status='active' AND r.payment_status IN ('paid','not_required','offline_confirmed'){$where_event} LIMIT 1",
+					"SELECT p.* FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE pe.phone_hash=%s AND p.public_id=%s AND p.status='active' AND r.payment_status IN ('paid','not_required','offline_confirmed'){$where_event}{$recovery_scope} LIMIT 1",
 					$hash,
 					$tracking_code
 				)
@@ -147,7 +149,7 @@ final class ECM_Participants {
 		}
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT p.* FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE pe.phone_hash=%s AND p.status='active' AND r.payment_status IN ('paid','not_required','offline_confirmed'){$where_event} ORDER BY p.id DESC LIMIT 2",
+				"SELECT p.* FROM {$participants} p INNER JOIN {$people} pe ON pe.id=p.person_id INNER JOIN {$registrations} r ON r.id=p.registration_id WHERE pe.phone_hash=%s AND p.status='active' AND r.payment_status IN ('paid','not_required','offline_confirmed'){$where_event}{$recovery_scope} ORDER BY p.id DESC LIMIT 2",
 				$hash
 			)
 		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared

@@ -5,7 +5,7 @@ defined( 'ABSPATH' ) || exit;
 final class ECM_Activator {
 	public static function activate(): void {
 		global $wpdb;
-		if ( in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1', '0.6.6.2', '0.7.0', ECM_VERSION ), true ) ) {
+		if ( in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1', '0.6.6.2', '0.7.0', '0.7.1', ECM_VERSION ), true ) ) {
 			if ( ECM_Flow::ready() || ECM_Flow::install() ) {
 				update_option( 'ecm_db_version', ECM_VERSION, false );
 			}

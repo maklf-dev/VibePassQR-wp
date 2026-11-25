@@ -24,8 +24,8 @@ final class ECM_Flow_Admin {
 		echo '<p><label>' . esc_html( $label ) . ' ';
 		if ( 'checkbox' === $type ) {
 			echo '<input type="checkbox" value="1" name="' . esc_attr( $key ) . '" ' . checked( (bool) $value, true, false ) . '>';
-		} elseif ( 'textarea' === $type ) {
-			echo '<br><textarea rows="3" class="large-text" name="' . esc_attr( $key ) . '">' . esc_textarea( (string) $value ) . '</textarea>';
+		} elseif ( in_array( $type, array( 'textarea', 'code' ), true ) ) {
+			echo '<br><textarea rows="3" class="large-text' . ( 'code' === $type ? ' ecm-code-editor" dir="ltr' : '' ) . '" name="' . esc_attr( $key ) . '">' . esc_textarea( (string) $value ) . '</textarea>';
 		} else {
 			echo '<input type="' . esc_attr( $type ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( (string) $value ) . '">';
 		}
@@ -45,6 +45,7 @@ final class ECM_Flow_Admin {
 		$id = absint( $_GET['event_id'] ?? ( $events[0]->id ?? 0 ) );
 		$event = ECM_Events::event( $id );
 		wp_enqueue_style( 'ecm-flow', ECM_URL . 'assets/css/flow.css', array(), ECM_VERSION );
+		wp_enqueue_script( 'ecm-flow-admin', ECM_URL . 'assets/js/flow-admin.js', array(), ECM_VERSION, true );
 		echo '<div class="wrap ecm-admin ecm-workflow-admin" dir="rtl"><div class="ecm-admin__header"><h1>ثبت‌نام مرحله‌ای و دستی</h1></div><form method="get"><input type="hidden" name="page" value="ecm-workflow"><label>رویداد <select name="event_id">';
 		self::event_options( $events, $id );
 		echo '</select></label> <button class="button">نمایش</button></form>';
@@ -57,6 +58,7 @@ final class ECM_Flow_Admin {
 		}
 		$config = ECM_Events::config( $event );
 		$settings = ECM_Flow::settings( $id );
+		$profiles = (array) ( ECM_Utils::settings()['sms_pattern_profiles'] ?? array() );
 		echo '<p><a href="' . esc_url( ECM_Reports::url( 'workflow', array( 'ecm_event' => $id ), true ) ) . '">پرونده‌ها و بررسی رسید</a> · <a href="' . esc_url( admin_url( 'admin.php?page=ecm-events&edit=' . $id ) ) . '">تنظیم فیلدها، مهمان و مبلغ در رویداد</a></p>';
 		echo '<p>شورت‌کد برگه اختصاصی: <code>[ecm_flow event="' . esc_html( $event->slug ) . '"]</code></p>';
 		self::post_open( 'save', $id, 'ecm_flow_save_' . $id );
@@ -66,9 +68,13 @@ final class ECM_Flow_Admin {
 			self::box( $key, $label, $settings[ $key ] ?? in_array( $key, array( 'allow_back', 'cancel', 'reference_required', 'date_required' ), true ), 'checkbox' );
 		}
 		self::box( 'reviewers', 'شناسه کاربران وردپرس مجاز به بررسی این رویداد (جدا با ویرگول)', implode( ',', (array) ( $settings['reviewers'] ?? array() ) ) );
-		self::box( 'otp_profile', 'شناسه پروفایل پترن OTP (پیش‌فرض پروفایل بازیابی رویداد، پارامتر code)', $settings['otp_profile'] ?? '' );
+		self::pattern_picker( 'otp_profile', 'پترن پیامک کد تأیید (OTP)', $settings['otp_profile'] ?? '', $profiles, 'otp' );
+		$current_otp = ECM_SMS::profile_id( ( $settings['otp_profile'] ?? '' ) ?: ( $config['recovery_otp_pattern_profile'] ?? 'recovery_otp' ), $profiles );
+		$otp_issue = ECM_SMS::otp_parameter( (array) ( $profiles[ $current_otp ] ?? array() ) );
+		if ( is_wp_error( $otp_issue ) ) {
+			echo '<p class="notice notice-warning">' . esc_html( $otp_issue->get_error_message() ) . '</p>';
+		}
 		self::box( 'support', 'شماره پشتیبانی', $settings['support'] ?? '' );
-		self::box( 'reminder_deadline', 'مهلت برای یادآوری سوم (یک ساعت قبل، به وقت سایت)', empty( $settings['reminder_deadline'] ) ? '' : ECM_Utils::utc_to_local( $settings['reminder_deadline'], 'Y-m-d\TH:i' ), 'datetime-local' );
 		echo '<h3>فیلدهای قابل ویرایش بعد از OTP</h3><p>موبایل معرف قفل است. ویرایش مستقل رویداد عادی از شورت‌کد <code>[ecm_edit_registration event="' . esc_html( $event->slug ) . '"]</code> قابل استفاده است.</p>';
 		$fields = array( 'guests' => 'افزودن، ویرایش و حذف مهمان' );
 		foreach ( (array) $config['fields'] as $field ) {
@@ -84,15 +90,15 @@ final class ECM_Flow_Admin {
 			self::box( $key, $label, $settings[ $key ] ?? '' );
 		}
 		self::box( 'receipt_mb', 'حداکثر حجم تصویر رسید بر حسب MB (۱ تا ۸)', $settings['receipt_mb'] ?? 5, 'number' );
-		self::box( 'payment_html', 'متن / HTML معرفی پرداخت', $settings['payment_html'] ?? '', 'textarea' );
-		self::box( 'covenant_html', 'متن / HTML میثاق‌نامه', $settings['covenant_html'] ?? '', 'textarea' );
-		echo '<details><summary>طراحی پیشرفته مراحل</summary><p>هر ردیف مرحله تکمیلی را می‌توان افزود، حذف یا در ترتیب دلخواه قرار داد. این مراحل پس از فرم اطلاعات می‌آیند.</p>';
-		$extras = (array) ( $settings['extra'] ?? array() );
-		for ( $i = 0; $i < 8; $i++ ) {
-			self::box( "extra[{$i}][title]", 'عنوان مرحله تکمیلی ' . ( $i + 1 ), $extras[ $i ]['title'] ?? '' );
-			self::box( "extra[{$i}][html]", 'HTML مرحله تکمیلی', $extras[ $i ]['html'] ?? '', 'textarea' );
-			self::box( "extra[{$i}][fields]", 'کلید فیلدهای این مرحله، جدا با ویرگول', implode( ',', (array) ( $extras[ $i ]['fields'] ?? array() ) ) );
-		}
+		self::box( 'payment_html', 'متن / HTML معرفی پرداخت', $settings['payment_html'] ?? '', 'code' );
+		self::box( 'covenant_html', 'متن / HTML میثاق‌نامه', $settings['covenant_html'] ?? '', 'code' );
+		echo '<details><summary>طراحی پیشرفته مراحل</summary><p>مراحل تکمیلی پس از فرم اطلاعات می‌آیند. کلید فیلدهای هر مرحله را از فرم رویداد بردارید.</p>';
+		self::rows_editor( array_values( (array) ( $settings['extra'] ?? array() ) ), 8, 'افزودن مرحله', 'مرحلهٔ تکمیلی', static function ( string $index, array $stage ) {
+			$prefix = "extra[{$index}]";
+			self::box( $prefix . '[title]', 'عنوان مرحله تکمیلی', $stage['title'] ?? '' );
+			self::box( $prefix . '[html]', 'HTML مرحله تکمیلی', $stage['html'] ?? '', 'code' );
+			self::box( $prefix . '[fields]', 'کلید فیلدهای این مرحله، جدا با ویرگول', implode( ',', (array) ( $stage['fields'] ?? array() ) ) );
+		} );
 		$catalog = array(
 			'details' => array_merge( array( 'verified_mobile' => 'موبایل تأییدشده', 'guests' => 'فهرست مهمان' ), array_combine( array_map( static fn( $key ) => 'field_' . $key, array_diff( array_keys( $fields ), array( 'guests' ) ) ), array_values( array_diff_key( $fields, array( 'guests' => true ) ) ) ) ),
 			'payment' => array( 'payment' => 'اطلاعات پرداخت', 'amount' => 'مبلغ', 'copy' => 'کپی', 'downloads' => 'دانلودها', 'receipt' => 'تصویر رسید', 'reference' => 'شماره پیگیری', 'date' => 'تاریخ' ),
@@ -108,26 +114,97 @@ final class ECM_Flow_Admin {
 				echo '<code title="' . esc_attr( $label ) . '">[ecm_flow_part key="' . esc_html( $key ) . '"]</code> ';
 			}
 			echo '</p>';
-			self::box( 'templates[' . $step . ']', 'HTML قالب (اجزای جاافتاده در انتها درج می‌شوند)', $settings['templates'][ $step ] ?? '', 'textarea' );
+			self::box( 'templates[' . $step . ']', 'HTML قالب (اجزای جاافتاده در انتها درج می‌شوند)', $settings['templates'][ $step ] ?? '', 'code' );
 		}
-		self::box( 'css', 'CSS فرم در محدوده رویداد', $settings['css'] ?? '', 'textarea' );
+		self::box( 'css', 'CSS فرم در محدوده رویداد', $settings['css'] ?? '', 'code' );
 		if ( current_user_can( 'unfiltered_html' ) ) {
-			self::box( 'js', 'JavaScript مدیر کل (root عنصر فرم رویداد است)', $settings['js'] ?? '', 'textarea' );
+			self::box( 'js', 'JavaScript مدیر کل (root عنصر فرم رویداد است)', $settings['js'] ?? '', 'code' );
 		}
-		echo '</details><details><summary>پیامک‌های وضعیت و ویرایش</summary><p>برای هر مرحله و هر گیرنده یک قانون تعریف کنید. متغیرها شامل <code>{name}</code>، <code>{tracking_code}</code>، <code>{resume_link}</code>، <code>{review_note}</code> و در تأیید نهایی <code>{card_link}</code> هستند.</p>';
+		echo '</details>';
+		self::reminders_editor( $settings, $profiles );
+		echo '<details><summary>پیامک‌های وضعیت، ویرایش و یادآوری پیش‌فرض</summary><p>متغیرها شامل <code>{name}</code>، <code>{tracking_code}</code>، <code>{resume_link}</code>، <code>{review_note}</code> و در تأیید نهایی <code>{card_link}</code> هستند.</p>';
 		foreach ( self::notification_labels() as $key => $label ) {
 			echo '<details><summary>' . esc_html( $label ) . '</summary>';
-			foreach ( array( 'primary' => 'معرف', 'guest' => 'مهمان' ) as $audience => $title ) {
-				$rule = $settings['sms'][ $key ][ $audience ] ?? array();
-				$prefix = "sms[{$key}][{$audience}]";
-				self::box( $prefix . '[enabled]', 'ارسال به ' . $title, $rule['enabled'] ?? false, 'checkbox' );
-				self::box( $prefix . '[text]', 'متن ' . $title, $rule['text'] ?? self::default_message( $key ), 'textarea' );
-				self::box( $prefix . '[pattern_profile]', 'شناسه پروفایل پترن (خالی برای متن آزاد)', $rule['pattern_profile'] ?? '' );
-			}
+			self::sms_editor( "sms[{$key}]", $settings['sms'][ $key ] ?? array(), $profiles, $key );
 			echo '</details>';
 		}
-		echo '</details><p><button class="button button-primary">ذخیره تنظیمات</button></p></form>';
+		echo '</details><input type="hidden" name="ecm_flow_form_complete" value="1"><p><button class="button button-primary">ذخیره تنظیمات</button></p></form>';
 		echo '<p><a class="button" href="' . esc_url( admin_url( 'admin.php?page=ecm-test-registration&event_id=' . $id ) ) . '">ثبت‌نام دستی برای این رویداد</a></p></div>';
+	}
+
+	private static function rows_editor( array $rows, int $limit, string $add, string $title, callable $render ): void {
+		$card = static function ( string $index, array $row ) use ( $title, $render ) {
+			echo '<fieldset class="ecm-flow-config-row" data-flow-config-row><legend>' . esc_html( $title ) . ' <span data-flow-row-number></span></legend>';
+			$render( $index, $row );
+			echo '<p class="ecm-flow-row-actions"><button type="button" class="button" data-flow-row-up>بالا</button> <button type="button" class="button" data-flow-row-down>پایین</button> <button type="button" class="button-link-delete" data-flow-row-remove>حذف</button></p></fieldset>';
+		};
+		echo '<div data-flow-config-editor data-limit="' . $limit . '"><div data-flow-config-items>';
+		foreach ( array_values( $rows ) as $index => $row ) { $card( (string) $index, $row ); }
+		echo '</div><p data-flow-config-empty ' . ( $rows ? 'hidden' : '' ) . '>هنوز موردی اضافه نشده است.</p><template>';
+		$card( '__row__', array() );
+		echo '</template><p><button type="button" class="button" data-flow-row-add>' . esc_html( $add ) . '</button></p></div>';
+	}
+
+	private static function pattern_picker( string $name, string $label, string $value, array $profiles, string $use ): void {
+		$current = ECM_SMS::profile_id( $value, $profiles );
+		$choices = array_filter( $profiles, static fn( $profile ) => 'otp' === $use ? ! is_wp_error( ECM_SMS::otp_parameter( $profile ) ) : self::notification_pattern( $profile, $use ) );
+		echo '<p><label>' . esc_html( $label ) . ' <select name="' . esc_attr( $name ) . '"><option value="">' . ( 'otp' === $use ? 'پیش‌فرض بازیابی رویداد' : 'متن آزاد' ) . '</option>';
+		if ( $current && ! isset( $choices[ $current ] ) ) {
+			echo '<option value="' . esc_attr( $current ) . '" selected>نیازمند اصلاح: ' . esc_html( $profiles[ $current ]['label'] ?? $value ) . '</option>';
+		}
+		foreach ( $choices as $key => $profile ) {
+			echo '<option value="' . esc_attr( $key ) . '" ' . selected( $current, $key, false ) . '>' . esc_html( ( $profile['label'] ?? $key ) . ' · ' . $profile['code'] ) . '</option>';
+		}
+		echo '</select></label></p>';
+	}
+
+	private static function notification_pattern( array $profile, string $use ): bool {
+		if ( empty( $profile['enabled'] ) || empty( $profile['code'] ) || 'otp' === ( $profile['purpose'] ?? '' ) ||
+			( 'confirmed' !== $use && ! empty( $profile['requires_payment'] ) ) ) { return false; }
+		foreach ( (array) ( $profile['params'] ?? array() ) as $value ) {
+			preg_match_all( '/\{[^{}]+\}/', (string) $value, $tokens );
+			$allowed = array( '{name}', '{phone}', '{event_name}', '{tracking_code}', '{resume_link}', '{participant_type}', '{time}', '{payment_status}', '{payment_date}' );
+			if ( 'confirmed' === $use ) { $allowed = array_merge( $allowed, array( '{card_link}', '{host_name}', '{payment_reference}' ) ); }
+			if ( in_array( $use, array( 'rejected', 'more_info' ), true ) ) { $allowed[] = '{review_note}'; }
+			foreach ( $tokens[0] as $token ) {
+				if ( ! in_array( $token, $allowed, true ) && ! ( ! str_starts_with( $use, 'reminder_' ) && preg_match( '/^\{field:[a-z0-9_-]+\}$/D', $token ) ) ) { return false; }
+			}
+		}
+		return true;
+	}
+
+	private static function sms_editor( string $prefix, array $rules, array $profiles, string $use ): void {
+		foreach ( array( 'primary' => 'معرف', 'guest' => 'مهمان' ) as $audience => $title ) {
+			$rule = $rules[ $audience ] ?? array();
+			$name = $prefix . '[' . $audience . ']';
+			self::box( $name . '[enabled]', 'ارسال به ' . $title, $rule['enabled'] ?? ( 'reminder_custom' === $use && 'primary' === $audience ), 'checkbox' );
+			self::pattern_picker( $name . '[pattern_profile]', 'روش ارسال به ' . $title, $rule['pattern_profile'] ?? '', $profiles, $use );
+			self::box( $name . '[text]', 'متن آزاد برای ' . $title, $rule['text'] ?? self::default_message( $use ), 'textarea' );
+		}
+	}
+
+	private static function reminders_editor( array $settings, array $profiles ): void {
+		$custom = isset( $settings['reminder_rules'] );
+		$deadline = (string) ( $settings['reminder_deadline'] ?? '' );
+		echo '<details><summary>زمان‌بندی یادآوری ثبت‌نام</summary><p>برای ارسال، گزینه «یادآوری ثبت‌نام نیمه‌تمام» را در بخش مسیر و دسترسی روشن کنید. ساعت‌ها به وقت سایت هستند.</p>';
+		self::box( 'reminder_deadline', 'تاریخ و ساعت پایان مهلت ثبت‌نام (مبنای یادآوری)', $deadline ? ECM_Utils::utc_to_local( $deadline, 'Y-m-d\TH:i' ) : '', 'datetime-local' );
+		echo '<p><label>روش زمان‌بندی <select name="reminder_mode" data-flow-reminder-mode><option value="legacy" ' . selected( ! $custom, true, false ) . '>زمان‌بندی پیش‌فرض</option><option value="custom" ' . selected( $custom, true, false ) . '>یادآوری‌های سفارشی</option></select></label></p>';
+		echo '<p data-flow-reminder-legacy ' . ( $custom ? 'hidden' : '' ) . '>یادآوری اول و دوم پس از ۲ و ۲۴ ساعت، و سوم در صورت امکان یک ساعت مانده به مهلت است. متن‌ها در بخش پیامک‌های وضعیت و یادآوری پیش‌فرض هستند.</p><div data-flow-reminder-custom ' . ( $custom ? '' : 'hidden' ) . '><p>برای هر ردیف، زمان و روش ارسال معرف یا مهمان را تعیین کنید.</p>';
+		self::rows_editor( (array) ( $settings['reminder_rules'] ?? array() ), ECM_Flow_Reminders::LIMIT, 'افزودن یادآوری', 'یادآوری', static function ( string $index, array $rule ) use ( $profiles ) {
+			$prefix = "reminder_rules[{$index}]";
+			$offset = (int) ( $rule['offset'] ?? HOUR_IN_SECONDS );
+			$unit = 0 === $offset % DAY_IN_SECONDS ? 'day' : ( 0 === $offset % HOUR_IN_SECONDS ? 'hour' : 'minute' );
+			$units = array( 'day' => DAY_IN_SECONDS, 'hour' => HOUR_IN_SECONDS, 'minute' => MINUTE_IN_SECONDS );
+			echo '<input type="hidden" name="' . esc_attr( $prefix ) . '[id]" value="' . esc_attr( $rule['id'] ?? '' ) . '"><div class="ecm-flow-offset">';
+			self::box( $prefix . '[amount]', 'فاصله', intdiv( $offset, $units[ $unit ] ), 'number' );
+			echo '<label>واحد <select name="' . esc_attr( $prefix ) . '[unit]">';
+			foreach ( array( 'day' => 'روز', 'hour' => 'ساعت', 'minute' => 'دقیقه' ) as $value => $label ) {
+				echo '<option value="' . esc_attr( $value ) . '" ' . selected( $value, $unit, false ) . '>' . esc_html( $label ) . '</option>';
+			}
+			echo '</select></label><label>مبنا <select name="' . esc_attr( $prefix ) . '[anchor]"><option value="deadline" ' . selected( $rule['anchor'] ?? 'deadline', 'deadline', false ) . '>قبل از پایان مهلت</option><option value="idle" ' . selected( $rule['anchor'] ?? '', 'idle', false ) . '>پس از آخرین ثبت مرحله</option></select></label></div>';
+			self::sms_editor( $prefix . '[sms]', $rule['sms'] ?? array(), $profiles, 'reminder_custom' );
+		} );
+		echo '</div></details>';
 	}
 
 	private static function flags(): array {
@@ -159,6 +236,9 @@ final class ECM_Flow_Admin {
 		if ( ! current_user_can( 'manage_options' ) || ! ECM_Events::event( $id ) ) {
 			wp_die( 'دسترسی ندارید.', '', array( 'response' => 403 ) );
 		}
+		if ( '1' !== ECM_Flow_Public::param( 'ecm_flow_form_complete' ) ) {
+			self::settings_error( 'فرم کامل دریافت نشد. تنظیمات قبلی حفظ شد. صفحه را تازه کنید و در صورت تکرار محدودیت max_input_vars هاست را بررسی کنید.' );
+		}
 		$old = ECM_Flow::settings( $id );
 		$settings = array( 'version' => 1 + (int) ( $old['version'] ?? 0 ) );
 		foreach ( self::flags() as $key => $label ) {
@@ -177,11 +257,19 @@ final class ECM_Flow_Admin {
 			};
 		}
 		$settings['receipt_mb'] = min( 8, max( 1, absint( ECM_Flow_Public::param( 'receipt_mb' ) ) ) );
-		$settings['otp_profile'] = sanitize_key( ECM_Flow_Public::param( 'otp_profile' ) );
+		$profiles = (array) ( ECM_Utils::settings()['sms_pattern_profiles'] ?? array() );
+		$settings['otp_profile'] = ECM_SMS::profile_id( ECM_Flow_Public::param( 'otp_profile' ), $profiles );
+		$old_otp = ECM_SMS::profile_id( (string) ( $old['otp_profile'] ?? '' ), $profiles );
+		if ( $settings['otp_profile'] && $settings['otp_profile'] !== $old_otp ) {
+			$param = ECM_SMS::otp_parameter( (array) ( $profiles[ $settings['otp_profile'] ] ?? array() ) );
+			if ( is_wp_error( $param ) ) { self::settings_error( $param->get_error_message() ); }
+		}
 		$settings['support'] = preg_replace( '/[^0-9+]/', '', ECM_Utils::normalize_digits( ECM_Flow_Public::param( 'support' ) ) );
 		$settings['reviewers'] = array_values( array_filter( array_map( 'absint', explode( ',', ECM_Flow_Public::param( 'reviewers' ) ) ) ) );
 		$settings['edit_keys'] = array_map( 'sanitize_key', array_keys( (array) ( $_POST['edit_keys'] ?? array() ) ) );
-		$settings['reminder_deadline'] = ECM_Utils::local_to_utc( str_replace( 'T', ' ', ECM_Flow_Public::param( 'reminder_deadline' ) ) );
+		$deadline = ECM_Flow_Public::param( 'reminder_deadline' );
+		$settings['reminder_deadline'] = ECM_Utils::local_to_utc( $deadline );
+		if ( $deadline && ! $settings['reminder_deadline'] ) { self::settings_error( 'تاریخ و ساعت مهلت معتبر نیست.' ); }
 		$settings['extra'] = $settings['templates'] = array();
 		$form_config = ECM_Events::config( ECM_Events::event( $id ) );
 		$available = array_diff(
@@ -200,15 +288,66 @@ final class ECM_Flow_Admin {
 			$settings['templates'][ $key ] = wp_kses_post( wp_unslash( $_POST['templates'][ $key ] ?? '' ) );
 		}
 		foreach ( self::notification_labels() as $key => $label ) {
-			foreach ( array( 'primary', 'guest' ) as $audience ) {
-				$raw = (array) ( $_POST['sms'][ $key ][ $audience ] ?? array() );
-				$pattern = sanitize_key( (string) ( $raw['pattern_profile'] ?? '' ) );
-				$settings['sms'][ $key ][ $audience ] = array( 'enabled' => ! empty( $raw['enabled'] ), 'text' => sanitize_textarea_field( wp_unslash( $raw['text'] ?? '' ) ), 'pattern_profile' => $pattern, 'mode' => $pattern ? 'pattern' : 'webservice' );
-			}
+			$settings['sms'][ $key ] = self::sanitize_sms( (array) ( $_POST['sms'][ $key ] ?? array() ), $profiles, $key, $old['sms'][ $key ] ?? array() );
 		}
+		if ( 'custom' === ECM_Flow_Public::param( 'reminder_mode' ) ) {
+			$settings['reminder_rules'] = self::sanitize_reminders( (array) ( $_POST['reminder_rules'] ?? array() ), $profiles, $old['reminder_rules'] ?? array(), $settings['reminder_deadline'] );
+		}
+		$changed = ( isset( $old['reminder_rules'] ) || isset( $settings['reminder_rules'] ) ) &&
+			( ( $old['reminder_rules'] ?? null ) !== ( $settings['reminder_rules'] ?? null ) ||
+			( $old['reminder_deadline'] ?? null ) !== $settings['reminder_deadline'] ||
+			! empty( $old['reminders'] ) !== $settings['reminders'] );
+		$settings['reminder_rules_since'] = $changed ? time() : (int) ( $old['reminder_rules_since'] ?? 0 );
+		$settings['reminder_plan_version'] = $changed ? $settings['version'] : (int) ( $old['reminder_plan_version'] ?? 0 );
 		update_option( 'ecm_workflow_event_' . $id, $settings, false );
+		if ( $changed ) { ECM_Flow_Reminders::queue_replan( $id, $settings['reminder_plan_version'] ); }
 		wp_safe_redirect( admin_url( 'admin.php?page=ecm-workflow&event_id=' . $id . '&saved=1' ), 303 );
 		exit;
+	}
+
+	private static function settings_error( string $message ): void {
+		wp_die( esc_html( $message ), 'تنظیمات ذخیره نشد', array( 'response' => 400, 'back_link' => true ) );
+	}
+
+	private static function sanitize_sms( array $raw, array $profiles, string $use, array $previous = array() ): array {
+		$rules = array();
+		foreach ( array( 'primary', 'guest' ) as $audience ) {
+			$rule = (array) ( $raw[ $audience ] ?? array() );
+			$profile = ECM_SMS::profile_id( (string) ( $rule['pattern_profile'] ?? '' ), $profiles );
+			$enabled = ! empty( $rule['enabled'] );
+			$text = sanitize_textarea_field( wp_unslash( (string) ( $rule['text'] ?? '' ) ) );
+			$same_legacy = 'reminder_custom' !== $use && ! empty( $previous[ $audience ]['enabled'] ) &&
+				$profile === ECM_SMS::profile_id( (string) ( $previous[ $audience ]['pattern_profile'] ?? '' ), $profiles );
+			if ( $enabled && $profile && ! $same_legacy && ! self::notification_pattern( (array) ( $profiles[ $profile ] ?? array() ), $use ) ) {
+				self::settings_error( 'یکی از پترن‌های انتخاب‌شده فعال یا با داده‌های این وضعیت سازگار نیست.' );
+			}
+			if ( $enabled && ! $profile && '' === trim( $text ) && 'reminder_custom' === $use ) {
+				self::settings_error( 'برای گیرندهٔ فعال در هر یادآوری، متن بنویسید یا پترن انتخاب کنید.' );
+			}
+			$rules[ $audience ] = array( 'enabled' => $enabled, 'text' => $text, 'pattern_profile' => $profile, 'mode' => $profile ? 'pattern' : 'webservice' );
+		}
+		return $rules;
+	}
+
+	private static function sanitize_reminders( array $raw, array $profiles, array $previous, ?string $deadline ): array {
+		$rules = array();
+		$units = array( 'day' => DAY_IN_SECONDS, 'hour' => HOUR_IN_SECONDS, 'minute' => MINUTE_IN_SECONDS );
+		foreach ( array_slice( $raw, 0, ECM_Flow_Reminders::LIMIT ) as $row ) {
+			$row = (array) $row;
+			$id = (string) ( $row['id'] ?? '' );
+			if ( ! isset( $previous[ $id ] ) || isset( $rules[ $id ] ) ) { $id = wp_generate_uuid4(); }
+			$anchor = (string) ( $row['anchor'] ?? '' );
+			$unit = $units[ (string) ( $row['unit'] ?? '' ) ] ?? 0;
+			$amount = filter_var( (string) ( $row['amount'] ?? '' ), FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 1, 'max_range' => 525600 ) ) );
+			if ( ! in_array( $anchor, array( 'deadline', 'idle' ), true ) || ! $unit || ! $amount || $amount * $unit > YEAR_IN_SECONDS ) {
+				self::settings_error( 'برای هر یادآوری یک فاصلهٔ معتبر بین یک دقیقه و یک سال وارد کنید.' );
+			}
+			if ( 'deadline' === $anchor && ! $deadline ) { self::settings_error( 'برای یادآوری قبل از مهلت، تاریخ و ساعت پایان مهلت را وارد کنید.' ); }
+			$sms = self::sanitize_sms( (array) ( $row['sms'] ?? array() ), $profiles, 'reminder_custom' );
+			if ( empty( $sms['primary']['enabled'] ) && empty( $sms['guest']['enabled'] ) ) { self::settings_error( 'برای هر یادآوری حداقل یک گیرنده را فعال کنید.' ); }
+			$rules[ $id ] = array( 'id' => $id, 'anchor' => $anchor, 'offset' => $amount * $unit, 'sms' => $sms );
+		}
+		return $rules;
 	}
 
 	private static function event_options( array $events, int $selected ): void {
