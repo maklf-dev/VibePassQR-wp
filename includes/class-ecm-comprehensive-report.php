@@ -13,7 +13,7 @@ final class ECM_Comprehensive_Report {
 
 	private static function scope( array $filters ): array {
 		global $wpdb;
-		$where = array( '1=1' );
+		$where = array( "r.payment_status NOT IN ('workflow_pending','cancelled')" );
 		$args  = array();
 		$events = array_values( array_unique( array_filter( array_map( 'absint', (array) ( $filters['events'] ?? array() ) ) ) ) );
 		if ( $events ) {
@@ -48,6 +48,8 @@ final class ECM_Comprehensive_Report {
 			$where[] = '(r.public_id LIKE %s OR r.form_data LIKE %s OR p.public_id LIKE %s OR p.display_name LIKE %s OR pe.normalized_phone LIKE %s OR host.display_name LIKE %s OR hostpe.full_name LIKE %s OR pe.full_name LIKE %s OR ownerpe.full_name LIKE %s)';
 			array_push( $args, $like, $like, $like, $like, $like, $like, $like, $like, $like );
 		}
+		if ( array_key_exists( 'events', $filters ) && ! $events ) { $where[] = '1=0'; }
+		ECM_Report_Scope::field_sql( $filters['field_filters'] ?? array(), 'r.form_data', $where, $args );
 		return array( implode( ' AND ', $where ), $args );
 	}
 
@@ -202,7 +204,8 @@ final class ECM_Comprehensive_Report {
 	}
 
 	private static function query_args( array $filters ): array {
-		$args = array( 'ecm_view' => 'registrations', 'ecm_comprehensive' => 1, 'ecm_event_selection' => 1 );
+		$args = array( 'ecm_view' => 'registrations', 'ecm_comprehensive' => 1 ) + ECM_Report_Scope::args( $filters['events'] );
+		if ( ! empty( $filters['field_filters'] ) ) { $args['ecm_field_filter'] = $filters['field_filters']; }
 		if ( $filters['events'] ) {
 			$args['ecm_events'] = array_values( $filters['events'] );
 		}
@@ -212,6 +215,25 @@ final class ECM_Comprehensive_Report {
 			}
 		}
 		return $args;
+	}
+
+
+	public static function columns(): array {
+		$columns = array( 'name' => 'نام کامل', 'role' => 'نقش', 'relation' => 'مهمان‌ها / معرف', 'phone' => 'موبایل',
+			'card' => 'کد کارت', 'registration' => 'کد ثبت‌نام', 'event' => 'رویداد', 'date' => 'تاریخ ثبت‌نام', 'attendance' => 'حضور' );
+		if ( ECM_Registration_Admin::is_site_administrator() ) {
+			$columns += array( 'payment' => 'وضعیت پرداخت', 'form' => 'داده‌های فرم' );
+		}
+		$selected = isset( $_GET['ecm_people_cols'] ) ? array_map( 'sanitize_key', (array) $_GET['ecm_people_cols'] ) : array_keys( $columns );
+		return array_intersect_key( $columns, array_flip( $selected ) ) ?: $columns;
+	}
+
+	private static function values( object $row, array $guests ): array {
+		return array( 'name' => self::name( $row ), 'role' => ( 'guest' === $row->participant_type ? 'مهمان' : 'معرف' ) . ( $row->is_test ? ' · تستی' : '' ),
+			'relation' => self::relation( $row, $guests ), 'phone' => self::phone( $row ), 'card' => $row->participant_code,
+			'registration' => $row->registration_code, 'event' => $row->event_title, 'date' => ECM_Utils::utc_to_local( $row->created_at ),
+			'attendance' => (string) $row->attendance_count, 'payment' => $row->payment_status,
+			'form' => 'primary' === $row->participant_type ? (string) $row->form_data : '' );
 	}
 
 	public static function render( bool $admin, array $filters, bool $finance_hidden = false ): string {
@@ -225,7 +247,8 @@ final class ECM_Comprehensive_Report {
 		$paged = max( 1, min( $pages, absint( $_GET['ecm_paged'] ?? 1 ) ) );
 		$rows = self::query( $filters, $page_size, ( $paged - 1 ) * $page_size );
 		$guest_names = self::guest_names( $rows );
-		$export_args = self::query_args( $filters );
+		$columns = self::columns();
+		$export_args = self::query_args( $filters ) + array( 'ecm_people_cols' => array_keys( $columns ) );
 		$csv_url = wp_nonce_url( add_query_arg( $export_args + array( 'action' => 'ecm_comprehensive_csv' ), admin_url( 'admin-post.php' ) ), 'ecm_comprehensive_csv' );
 		$print_url = wp_nonce_url( add_query_arg( $export_args + array( 'action' => 'ecm_comprehensive_print' ), admin_url( 'admin-post.php' ) ), 'ecm_comprehensive_print' );
 		$ordinary_url = add_query_arg( array_diff_key( $export_args, array_flip( array( 'ecm_comprehensive', 'ecm_page_size' ) ) ), $base );
@@ -233,22 +256,14 @@ final class ECM_Comprehensive_Report {
 		?>
 		<section class="ecm-report ecm-comprehensive-report" dir="rtl">
 			<div class="ecm-report__header"><div><h2>فهرست تمام شرکت‌کنندگان</h2><p>هر معرف و هر مهمان یک ردیف مستقل دارد. ثبت‌نام‌های تستی به‌صورت پیش‌فرض حذف شده‌اند.</p></div><div class="ecm-report__actions"><a class="button" href="<?php echo esc_url( $ordinary_url ); ?>">گزارش معمولی</a><a class="button button-primary" href="<?php echo esc_url( $csv_url ); ?>">خروجی CSV همه افراد</a><a class="button" target="_blank" rel="noopener" href="<?php echo esc_url( $print_url ); ?>">چاپ / PDF</a></div></div>
-			<?php self::filters_markup( $admin, $filters, $base, true, $finance_hidden ); ?>
+			<?php self::filters_markup( $admin, $filters, $base, true, $finance_hidden ); echo ECM_Report_Scope::metrics( $filters['events'] ); ?>
 			<div class="ecm-stats"><div><span>کل افراد</span><strong><?php echo esc_html( number_format_i18n( (int) $totals->total ) ); ?></strong></div><div><span>معرف‌ها</span><strong><?php echo esc_html( number_format_i18n( (int) $totals->total - (int) $totals->guests ) ); ?></strong></div><div><span>مهمان‌ها</span><strong><?php echo esc_html( number_format_i18n( (int) $totals->guests ) ); ?></strong></div></div>
 			<p class="ecm-report-count-note"><?php if ( isset( $_GET['ecm_page_size'] ) && 'all' === $_GET['ecm_page_size'] && (int) $totals->total > 2500 ) : ?><span class="ecm-report-integrity-note">برای بیش از ۲۵۰۰ نفر، نمایش همه در یک صفحه غیرفعال است؛ از CSV یا صفحه‌بندی استفاده کنید.</span> <?php endif; ?>تعداد شرکت‌کنندگان = تعداد معرف‌ها (ثبت‌نام‌ها) + مهمان‌های ثبت‌شده. <?php echo esc_html( number_format_i18n( (int) $totals->total ) ); ?> نفر مطابق فیلتر یافت شد؛ نمایش <?php echo esc_html( number_format_i18n( (int) $totals->total ? ( $paged - 1 ) * $page_size + 1 : 0 ) ); ?> تا <?php echo esc_html( number_format_i18n( min( (int) $totals->total, $paged * $page_size ) ) ); ?> در این صفحه. <?php if ( (int) $totals->missing_primary ) : ?><span class="ecm-report-integrity-note"><?php echo esc_html( number_format_i18n( (int) $totals->missing_primary ) ); ?> ثبت‌نام قدیمی هنوز رکورد هویتی کامل ندارد؛ در گزارش شمرده شده است.</span><?php endif; ?></p>
-			<div class="ecm-table-scroll"><table class="widefat striped ecm-report-table"><thead><tr><th>نام و نام خانوادگی</th><th>نقش</th><th>مهمان‌ها / معرف</th><th>شماره تماس</th><th>کد کارت</th><th>رویداد</th><th>زمان ثبت‌نام</th><th>حضور</th><th>جزئیات فرم</th></tr></thead><tbody>
-			<?php if ( ! $rows ) : ?><tr><td colspan="9">موردی مطابق فیلتر پیدا نشد.</td></tr><?php endif; ?>
+			<div class="ecm-table-scroll"><table class="widefat striped ecm-report-table"><thead><tr><?php foreach ( $columns as $label ) { echo '<th>' . esc_html( $label ) . '</th>'; } ?></tr></thead><tbody>
+			<?php if ( ! $rows ) : ?><tr><td colspan="<?php echo count( $columns ); ?>">موردی مطابق فیلتر پیدا نشد.</td></tr><?php endif; ?>
 			<?php foreach ( $rows as $row ) : ?>
 			<tr class="<?php echo ! empty( $row->is_test ) ? 'ecm-registration-is-test' : ''; ?>">
-			<td data-label="نام"><?php echo esc_html( self::name( $row ) ); ?></td>
-			<td data-label="نقش"><span class="ecm-badge <?php echo 'guest' === $row->participant_type ? 'ecm-badge--guest' : 'ecm-badge--primary'; ?>"><?php echo 'guest' === $row->participant_type ? 'مهمان' : 'معرف'; ?></span><?php if ( ! empty( $row->is_test ) ) : ?> <span class="ecm-badge ecm-badge--test">تستی</span><?php endif; ?></td>
-			<td data-label="ارتباط"><?php echo esc_html( self::relation( $row, $guest_names ) ); ?></td>
-			<td data-label="تلفن"><bdi><?php echo esc_html( self::phone( $row ) ); ?></bdi></td>
-			<td data-label="کد کارت"><code><?php echo esc_html( $row->participant_code ); ?></code></td>
-			<td data-label="رویداد"><?php echo esc_html( $row->event_title ?: 'رویداد قدیمی' ); ?></td>
-			<td data-label="تاریخ"><?php echo esc_html( ECM_Utils::utc_to_local( $row->created_at ) ); ?></td>
-			<td data-label="حضور"><?php echo esc_html( (string) (int) $row->attendance_count ); ?></td>
-			<td data-label="فرم"><?php if ( 'primary' === $row->participant_type ) : ?><details><summary>مشاهده</summary><?php $data = json_decode( (string) $row->form_data, true ); foreach ( (array) $data as $key => $value ) : if ( is_array( $value ) ) { $value = implode( '، ', array_map( static fn( $item ): string => is_scalar( $item ) ? (string) $item : wp_json_encode( $item, JSON_UNESCAPED_UNICODE ), $value ) ); } ?><div><b><?php echo esc_html( (string) $key ); ?>:</b> <?php echo esc_html( (string) $value ); ?></div><?php endforeach; ?></details><?php else : ?>—<?php endif; ?></td>
+			<?php $values = self::values( $row, $guest_names ); foreach ( $columns as $key => $label ) { echo '<td data-label="' . esc_attr( $label ) . '">' . esc_html( (string) ( $values[ $key ] ?? '' ) ) . '</td>'; } ?>
 			</tr>
 			<?php endforeach; ?></tbody></table></div>
 			<?php echo self::pagination( $base, $export_args, $paged, $pages ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
@@ -290,7 +305,8 @@ final class ECM_Comprehensive_Report {
 				<label class="ecm-report-field">تا تاریخ<input type="date" name="ecm_to" value="<?php echo esc_attr( $filters['to'] ); ?>"></label>
 				<?php if ( $comprehensive ) : ?><label class="ecm-report-field">تعداد ردیف<select name="ecm_page_size"><?php foreach ( array( '50' => '۵۰', '100' => '۱۰۰', '250' => '۲۵۰', '500' => '۵۰۰', 'all' => 'همه (تا ۲۵۰۰ نفر)' ) as $value => $label ) : ?><option value="<?php echo esc_attr( $value ); ?>" <?php selected( $page_size, $value ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select></label><?php endif; ?>
 			</div>
-			<div class="ecm-report-filter__actions"><button type="submit" class="button button-primary">اعمال فیلتر</button><a class="button" href="<?php echo esc_url( add_query_arg( array( 'ecm_view' => 'registrations' ), $base ) ); ?>">پاک‌کردن فیلترها</a></div>
+			<?php if ( $comprehensive ) : ?><details><summary>انتخاب ستون‌های نمایش و خروجی</summary><?php $selection = self::columns(); $allowed = array( 'name' => 'نام', 'role' => 'نقش', 'relation' => 'مهمان / معرف', 'phone' => 'موبایل', 'card' => 'کد کارت', 'registration' => 'کد ثبت‌نام', 'event' => 'رویداد', 'date' => 'تاریخ', 'attendance' => 'حضور' ); if ( ECM_Registration_Admin::is_site_administrator() ) { $allowed += array( 'payment' => 'پرداخت', 'form' => 'داده‌های فرم' ); } foreach ( $allowed as $key => $label ) { echo '<label><input type="checkbox" name="ecm_people_cols[]" value="' . esc_attr( $key ) . '" ' . checked( isset( $selection[ $key ] ), true, false ) . '>' . esc_html( $label ) . '</label> '; } ?></details><?php endif; ?>
+			<?php echo ECM_Report_Scope::field_inputs( (array) $filters['events'] ); ?><div class="ecm-report-filter__actions"><button type="submit" class="button button-primary">اعمال فیلتر</button><a class="button" href="<?php echo esc_url( add_query_arg( array( 'ecm_view' => 'registrations' ), $base ) ); ?>">پاک‌کردن فیلترها</a></div>
 		</form>
 		<?php
 	}
@@ -326,13 +342,15 @@ final class ECM_Comprehensive_Report {
 		header( 'Content-Disposition: attachment; filename="ecm-participants-' . gmdate( 'Ymd-His' ) . '.csv"' );
 		$out = fopen( 'php://output', 'w' );
 		fwrite( $out, "\xEF\xBB\xBF" );
-		fputcsv( $out, array( 'نام کامل', 'نقش', 'نام مهمان‌ها / معرف', 'موبایل', 'کد کارت', 'کد ثبت‌نام', 'رویداد', 'تاریخ ثبت‌نام', 'تعداد حضور', 'وضعیت پرداخت', 'داده‌های فرم' ) );
+		$columns = self::columns();
+		fputcsv( $out, array_values( $columns ), ',', '"', '' );
 		$offset = 0;
 		do {
 			$rows = self::query( $filters, 500, $offset );
 			$guests = self::guest_names( $rows );
 			foreach ( $rows as $row ) {
-				$values = array( self::name( $row ), 'guest' === $row->participant_type ? 'مهمان' : 'معرف', self::relation( $row, $guests ), self::phone( $row ), $row->participant_code, $row->registration_code, $row->event_title, ECM_Utils::utc_to_local( $row->created_at ), (string) $row->attendance_count, $row->payment_status, 'primary' === $row->participant_type ? (string) $row->form_data : '' );
+				$row_values = self::values( $row, $guests );
+				$values = array_map( static fn( $key ) => $row_values[ $key ] ?? '', array_keys( $columns ) );
 				fputcsv( $out, array_map( static function ( $value ): string {
 					$value = (string) $value;
 					return preg_match( '/^[\s\x00-\x1F]*[=+\-@]/u', $value ) ? "'" . $value : $value;
@@ -356,12 +374,18 @@ final class ECM_Comprehensive_Report {
 		}
 		nocache_headers();
 		header( 'Content-Type: text/html; charset=UTF-8' );
-		echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>گزارش جامع شرکت‌کنندگان</title><style>body{font:13px/1.7 Tahoma,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #777;padding:6px;text-align:right}thead{display:table-header-group}tr{break-inside:avoid}@media print{button{display:none}@page{size:A4 landscape}}</style></head><body><button onclick="print()">چاپ / ذخیره PDF</button><h2>فهرست جامع شرکت‌کنندگان</h2><p>تاریخ گزارش: ' . esc_html( wp_date( 'Y/m/d H:i' ) ) . '</p><table><thead><tr><th>نام</th><th>نقش</th><th>مهمان‌ها / معرف</th><th>موبایل</th><th>کد کارت</th><th>رویداد</th><th>حضور</th></tr></thead><tbody>';
+		echo '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>گزارش جامع شرکت‌کنندگان</title><style>body{font:13px/1.7 Tahoma,sans-serif;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #777;padding:6px;text-align:right}thead{display:table-header-group}tr{break-inside:avoid}@media print{button{display:none}@page{size:A4 landscape}}</style></head><body><button onclick="print()">چاپ / ذخیره PDF</button><h2>فهرست جامع شرکت‌کنندگان</h2><p>تاریخ گزارش: ' . esc_html( wp_date( 'Y/m/d H:i' ) ) . '</p><table><thead><tr>';
+		$columns = self::columns();
+		foreach ( $columns as $label ) { echo '<th>' . esc_html( $label ) . '</th>'; }
+		echo '</tr></thead><tbody>';
 		for ( $offset = 0; $offset < (int) $totals->total; $offset += 250 ) {
 			$rows = self::query( $filters, 250, $offset );
 			$guests = self::guest_names( $rows );
 			foreach ( $rows as $r ) {
-				echo '<tr><td>' . esc_html( self::name( $r ) ) . '</td><td>' . esc_html( 'guest' === $r->participant_type ? 'مهمان' : 'معرف' ) . '</td><td>' . esc_html( self::relation( $r, $guests ) ) . '</td><td>' . esc_html( self::phone( $r ) ) . '</td><td>' . esc_html( $r->participant_code ) . '</td><td>' . esc_html( $r->event_title ) . '</td><td>' . (int) $r->attendance_count . '</td></tr>';
+				$values = self::values( $r, $guests );
+				echo '<tr>';
+				foreach ( $columns as $key => $label ) { echo '<td>' . esc_html( (string) ( $values[ $key ] ?? '' ) ) . '</td>'; }
+				echo '</tr>';
 			}
 		}
 		echo '</tbody></table></body></html>';

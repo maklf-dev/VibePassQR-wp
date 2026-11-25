@@ -14,6 +14,7 @@ remove_role( 'ecm_attendance_operator' );
 wp_clear_scheduled_hook('ecm_sms_sweep');
 wp_unschedule_hook('ecm_sms_job');
 wp_clear_scheduled_hook('ecm_migrate_participants');
+wp_clear_scheduled_hook('ecm_workflow_reminders');
 
 if ( empty( $settings['delete_data_on_uninstall'] ) ) {
 	return;
@@ -27,7 +28,7 @@ if($base && $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s',$wpdb->esc_like(
   $path=realpath($base.'/'.$rel);if($path&&str_starts_with($path,trailingslashit($base)))wp_delete_file($path);
  }
 }
-foreach ( array( 'otp', 'ticket_tokens', 'links','files','sms_attempts','sms','registration_meta', 'events', 'attendance', 'participants', 'people', 'event_operator_acl', 'sessions', 'registrations', 'ticket_templates', 'event_definitions' ) as $suffix ) {
+foreach ( array( 'workflow_receipt_chunks', 'workflow_receipts', 'workflow', 'otp', 'ticket_tokens', 'links','files','sms_attempts','sms','registration_meta', 'events', 'attendance', 'participants', 'people', 'event_operator_acl', 'sessions', 'registrations', 'ticket_templates', 'event_definitions' ) as $suffix ) {
 	$table = $wpdb->prefix . 'ecm_' . $suffix;
 	$wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 }
@@ -42,6 +43,11 @@ foreach ( $pages as $page_id ) {
 delete_option( 'ecm_settings' );
 delete_option( 'ecm_pages' );
 delete_option( 'ecm_db_version' );
+delete_option( 'ecm_workflow_schema' );
+$workflow_options = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'ecm_workflow_event_' ) . '%' ) );
+foreach ( (array) $workflow_options as $option ) {
+	delete_option( $option );
+}
 delete_option('ecm_sms_key');
 delete_option('ecm_old_paths');
 delete_option('ecm_diagnostics_file_token');

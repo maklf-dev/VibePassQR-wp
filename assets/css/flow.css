@@ -1,0 +1,23 @@
+.ecm-flow .ecm-flow-form { display:grid; gap:.8rem; margin-block:1rem; }
+.ecm-flow label { display:block; }
+.ecm-flow input:not([type=checkbox]):not([type=radio]), .ecm-flow select, .ecm-flow textarea { max-width:100%; }
+.ecm-flow fieldset, .ecm-flow details { border:1px solid #cfd8e3; border-radius:.6rem; padding:.65rem; }
+.ecm-flow fieldset details + details { margin-block-start:.4rem; }
+.ecm-flow summary { cursor:pointer; font-weight:600; }
+.ecm-flow .ecm-flow-card-img { max-width:min(100%,27rem); height:auto; }
+.ecm-flow-intro{padding:16px 42px 16px 18px;background:var(--ecm-ice);border:1px solid var(--ecm-line);border-radius:var(--ecm-radius)}
+.ecm-flow .ecm-form{max-width:none}.ecm-flow .ecm-flow-form .ecm-button{justify-self:start}.ecm-flow-otp,.ecm-flow-edit{margin-block:16px}.ecm-flow-edit>summary{width:fit-content}.ecm-flow-otp [data-flow-otp-timer]{font-weight:750}
+.ecm-flow-grid>p,.ecm-flow-grid>h2,.ecm-flow-grid>fieldset,.ecm-flow-grid>button{grid-column:1/-1}
+.ecm-event-directory{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px}
+.ecm-directory-card{--event-bg:#ecfdf3;--event-ink:#166534;--event-line:#86efac;background:var(--event-bg);border:1px solid var(--event-line);border-inline-start:4px solid var(--event-ink);padding:18px;border-radius:var(--ecm-radius)}
+.ecm-directory-card--ended{--event-bg:#fef2f2;--event-ink:#b91c1c;--event-line:#fecaca}
+.ecm-directory-card--stopped{--event-bg:#fff7ed;--event-ink:#9a3412;--event-line:#fdba74}
+.ecm-directory-card h2{margin:.35rem 0;font-size:20px}.ecm-event-state{color:var(--event-ink);font-weight:800}
+.ecm-workflow-admin{max-width:1200px}.ecm-workflow-admin form>details,.ecm-workflow-admin form>h2+label,.ecm-workflow-admin form>h2+ p{margin-block:12px}
+.ecm-workflow-admin form>details,.ecm-workflow-admin .ecm-workflow-settings{padding:16px;border:1px solid var(--ecm-line,#cedbe5);border-radius:12px;background:white}
+.ecm-workflow-admin summary,.ecm-scope-picker summary{font-weight:750;cursor:pointer}
+.ecm-workflow-admin form>h2{margin-top:26px}.ecm-workflow-admin textarea{max-width:100%}
+.ecm-scope-picker{margin-block:14px;padding:12px 16px;border:1px solid #cedbe5;border-radius:12px;background:#f4f8fb}
+.ecm-scope-picker .ecm-scope-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:8px;margin:10px 0}
+.ecm-report-storage,.ecm-edit-summary{display:flex;flex-wrap:wrap;gap:12px;margin-block:14px}
+.ecm-report-storage span,.ecm-edit-summary span{background:#eaf3f8;border:1px solid #cedbe5;border-radius:10px;padding:8px 12px;color:#0b1f46}

@@ -36,12 +36,17 @@ final class ECM_Test_Registration {
 			$selected = $events[0] ?? null;
 		}
 		$test_rows = self::recent( 25 );
+		$manual_id = absint( $_GET['manual_created'] ?? 0 );
+		$manual = $manual_id ? ECM_DB::registration( $manual_id ) : null;
+		$manual_participant = $manual ? ECM_DB::primary_participant( $manual_id ) : null;
 		?>
 		<div class="wrap ecm-admin ecm-test-tool" dir="rtl">
-			<div class="ecm-admin__header"><div><span>TEST SANDBOX</span><h1>ثبت‌نام تستی مدیر</h1><p>بدون مراجعه به فرم عمومی. کارت و QR واقعی اما رکورد آزمایشی، بدون پیامک و خارج از گزارش اصلی.</p></div></div>
+			<div class="ecm-admin__header"><div><h1>ثبت‌نام دستی مدیر</h1><p>ساخت پرونده اصلی یا آزمایشی و انتخاب ارسال پیامک.</p></div></div>
 			<?php if ( isset( $_GET['ecm_test_error'] ) ) : ?><div class="notice notice-error"><p><?php echo esc_html( self::error_label( sanitize_key( wp_unslash( $_GET['ecm_test_error'] ) ) ) ); ?></p></div><?php endif; ?>
 			<?php if ( isset( $_GET['ecm_test_created'] ) ) : ?><div class="notice notice-success"><p>ثبت‌نام آزمایشی ساخته شد. لینک‌های کارت و حضور در جدول پایین آماده‌اند.</p></div><?php endif; ?>
-			<div class="ecm-subpanel"><h2>ساخت کارت آزمایشی جدید</h2><p>با بسته‌بودن ثبت‌نام عمومی نیز کار می‌کند. فقط رویدادهایی فهرست می‌شوند که کارت و حضورشان فعال است. از شماره‌های آزمایشی جدید استفاده کنید؛ شماره‌های موجود در بانک اشخاص پذیرفته نمی‌شوند.</p>
+			<?php if ( $manual_participant ) : ?><p class="notice notice-success">ثبت‌نام دستی ساخته شد. <a href="<?php echo esc_url( ECM_Tickets::card_url( $manual_participant ) ); ?>">نمایش کارت</a></p><?php endif; ?>
+			<?php if ( $selected && ECM_Flow::ready() ) : ?><div class="ecm-subpanel"><form method="get"><input type="hidden" name="page" value="ecm-test-registration"><label>رویداد <select name="event_id"><?php foreach ( $events as $entry ) : ?><option value="<?php echo (int) $entry->id; ?>" <?php selected( $selected->id, $entry->id ); ?>><?php echo esc_html( $entry->title ); ?></option><?php endforeach; ?></select></label> <button class="button">انتخاب</button></form><?php ECM_Flow_Edit::manual_markup( $selected ); ?></div><?php endif; ?>
+			<details class="ecm-subpanel"><summary>ابزار قدیمی کارت آزمایشی سریع</summary><h2>ساخت کارت آزمایشی جدید</h2><p>با بسته‌بودن ثبت‌نام عمومی نیز کار می‌کند. فقط رویدادهایی فهرست می‌شوند که کارت و حضورشان فعال است. از شماره‌های آزمایشی جدید استفاده کنید؛ شماره‌های موجود در بانک اشخاص پذیرفته نمی‌شوند.</p>
 			<?php if ( ! $events ) : ?><p class="notice notice-warning">رویداد منتشرشده و فعالی با مجوز کارت و حضور پیدا نشد.</p><?php else : ?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="ecm_create_test_registration"><?php wp_nonce_field( 'ecm_create_test_registration' ); ?>
@@ -52,7 +57,7 @@ final class ECM_Test_Registration {
 				</div>
 				<h3>مهمان آزمایشی (اختیاری)</h3><div class="ecm-admin-grid ecm-admin-grid--2"><label class="ecm-setting"><span>نام مهمان</span><input type="text" name="guest_name" maxlength="190"></label><label class="ecm-setting"><span>موبایل مهمان</span><input type="tel" name="guest_phone" placeholder="09xxxxxxxxx"></label></div>
 				<button type="submit" class="button button-primary">ایجاد کارت تستی</button>
-			</form><?php endif; ?></div>
+			</form><?php endif; ?></details>
 			<div class="ecm-subpanel"><h2>آخرین ثبت‌نام‌های تستی</h2><p>برای جلوگیری از انباشته‌شدن اطلاعات آزمایشی، رکوردهای تستی بعد از ۷۲ ساعت در اجرای دوره‌ای WP-Cron پاکسازی می‌شوند. حذف دستی نیز ممکن است.</p>
 			<div class="ecm-table-scroll"><table class="widefat striped"><thead><tr><th>شناسه</th><th>رویداد</th><th>زمان</th><th>کارت معرف</th><th>QR حضور</th><th>عملیات</th></tr></thead><tbody>
 			<?php if ( ! $test_rows ) : ?><tr><td colspan="6">هنوز رکورد تستی وجود ندارد.</td></tr><?php endif; ?>

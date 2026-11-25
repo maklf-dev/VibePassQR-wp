@@ -5,6 +5,12 @@ defined( 'ABSPATH' ) || exit;
 final class ECM_Activator {
 	public static function activate(): void {
 		global $wpdb;
+		if ( in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1', '0.6.6.2', '0.7.0', ECM_VERSION ), true ) ) {
+			if ( ECM_Flow::ready() || ECM_Flow::install() ) {
+				update_option( 'ecm_db_version', ECM_VERSION, false );
+			}
+			return;
+		}
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
 		$charset = $wpdb->get_charset_collate();
@@ -268,7 +274,9 @@ final class ECM_Activator {
 		ECM_Tickets::install();
 		self::create_pages();
 		ECM_Upgrade::install();
-		update_option( 'ecm_db_version', ECM_VERSION, false );
+		if ( ECM_Flow::install() ) {
+			update_option( 'ecm_db_version', ECM_VERSION, false );
+		}
 		flush_rewrite_rules();
 	}
 
@@ -306,6 +314,7 @@ final class ECM_Activator {
 	public static function deactivate(): void {
         wp_clear_scheduled_hook('ecm_sms_sweep');
 		wp_clear_scheduled_hook( 'ecm_migrate_participants' );
+		wp_clear_scheduled_hook( ECM_Flow::CRON );
 		flush_rewrite_rules();
 	}
 }

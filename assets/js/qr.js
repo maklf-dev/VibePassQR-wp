@@ -1270,8 +1270,10 @@ module.exports = QRCode;
   }
   var QRCode = require('./index');
   window.ECMQRCodeSVG = function(text) {
-    var qr = new QRCode(-1, 1);
-    qr.addData(String(text));
+    var payload = String(text);
+    // Use medium correction for short tickets. Legacy payloads keep the lower density.
+    var qr = new QRCode(-1, payload.length <= 100 ? 0 : 1);
+    qr.addData(payload);
     qr.make();
     var count = qr.getModuleCount();
     var quiet = 4;

@@ -2,102 +2,115 @@
 
 defined( 'ABSPATH' ) || exit;
 
-/**
- * One validated event scope for ECM reporting. Empty IDs means explicitly all events.
- * Historical `ecm_event` deep links remain supported; no query string selects
- * the newest published and enabled event until the user chooses otherwise.
- */
 final class ECM_Report_Scope {
-	private static ?array $event_catalog = null;
-
-	/** One events query per request, not once per report link or filter field. */
-	private static function catalog(): array {
-		if ( null === self::$event_catalog ) {
-			self::$event_catalog = ECM_Events::all();
+	public static function ids( ?array $events = null, int $hint = 0 ): array {
+		$events = $events ?? ECM_Events::all();
+		$allowed = array_values( array_map( 'intval', array_column( $events, 'id' ) ) );
+		if ( ! $allowed ) { return array(); }
+		if ( isset( $_GET['ecm_event_selection'] ) || isset( $_GET['ecm_events'] ) ) {
+			$requested = array_map( 'absint', array_slice( (array) ( $_GET['ecm_events'] ?? array() ), 0, 100 ) );
+			return $requested ? array_values( array_intersect( $allowed, $requested ) ) : $allowed;
 		}
-		return self::$event_catalog;
+		$legacy = absint( $_GET['ecm_event'] ?? $hint );
+		return array( $legacy && in_array( $legacy, $allowed, true ) ? $legacy : max( $allowed ) );
 	}
 
-	private static function event( int $id ): ?object {
-		foreach ( self::catalog() as $event ) {
-			if ( (int) $event->id === $id ) return $event;
-		}
-		return null;
+	public static function condition( string $column, array $ids ): string {
+		$ids = array_values( array_filter( array_map( 'absint', $ids ) ) );
+		return $ids ? $column . ' IN (' . implode( ',', $ids ) . ')' : '1=0';
 	}
-	public static function event_ids(): array {
-		if ( isset( $_GET['ecm_events'] ) ) {
-			$raw = wp_unslash( $_GET['ecm_events'] );
-			$raw = is_array( $raw ) ? $raw : array( $raw );
-			$raw = array_values( array_filter( $raw, 'is_scalar' ) );
-			if ( in_array( '0', array_map( 'strval', $raw ), true ) ) {
-				return array();
+
+	public static function args( array $ids ): array {
+		return array( 'ecm_event_selection' => 1, 'ecm_events' => $ids ?: array( 0 ) );
+	}
+
+	public static function hidden( array $ids ): string {
+		return '<input type="hidden" name="ecm_event_selection" value="1">' . implode( '', array_map(
+			static fn( $id ) => '<input type="hidden" name="ecm_events[]" value="' . (int) $id . '">', $ids ?: array( 0 )
+		) );
+	}
+
+	public static function checklist( array $events, array $ids ): string {
+		$html = '<details class="ecm-scope-picker"><summary>دوره‌های گزارش · ' . count( $ids ) . ' انتخاب</summary><input type="hidden" name="ecm_event_selection" value="1"><div class="ecm-scope-grid">';
+		foreach ( $events as $event ) {
+			$id = (int) $event->id;
+			$html .= '<label><input type="checkbox" name="ecm_events[]" value="' . $id . '" ' . checked( in_array( $id, $ids, true ), true, false ) . '> ' . esc_html( $event->title ) . '</label>';
+		}
+		return $html . '</div><small>با خالی گذاشتن انتخاب، همه دوره‌های قابل دسترس نشان داده می‌شوند.</small></details>';
+	}
+
+	public static function fields( array $ids ): array {
+		$fields = array();
+		foreach ( $ids as $id ) {
+			$event = ECM_Events::event( $id );
+			if ( ! $event ) { continue; }
+			foreach ( (array) ECM_Events::config( $event )['fields'] as $field ) {
+				if ( empty( $field['key'] ) || in_array( $field['type'], array( 'html', 'guest', 'telemetry' ), true ) ) { continue; }
+				$key = sanitize_key( $field['key'] );
+				$fields[ $key ]['label'] = $fields[ $key ]['label'] ?? $field['label'];
+				$fields[ $key ]['options'] = array_values( array_unique( array_merge( $fields[ $key ]['options'] ?? array(), (array) ( $field['options'] ?? array() ) ) ) );
 			}
-			$ids = array_values( array_unique( array_filter( array_map( 'absint', array_slice( $raw, 0, 150 ) ) ) ) );
-			return $ids ? ( self::existing_ids( $ids ) ?: array( PHP_INT_MAX ) ) : array( PHP_INT_MAX );
 		}
-		if ( isset( $_GET['ecm_event'] ) ) {
-			$raw_id = wp_unslash( $_GET['ecm_event'] );
-			$id = is_scalar( $raw_id ) ? absint( $raw_id ) : PHP_INT_MAX;
-			return $id ? ( self::event( $id ) ? array( $id ) : array( PHP_INT_MAX ) ) : array();
-		}
-		foreach ( self::catalog() as $event ) {
-			if ( ECM_Events::is_publicly_active( $event ) ) {
-				return array( (int) $event->id );
-			}
-		}
-		return array();
+		return $fields;
 	}
 
-	private static function existing_ids( array $ids ): array {
-		if ( ! $ids ) {
-			return array();
+	public static function form_filters( array $ids ): array {
+		$raw = (array) ( $_GET['ecm_field_filter'] ?? array() );
+		$valid = array();
+		foreach ( self::fields( $ids ) as $key => $field ) {
+			$value = isset( $raw[ $key ] ) && is_scalar( $raw[ $key ] ) ? sanitize_text_field( wp_unslash( $raw[ $key ] ) ) : '';
+			if ( $field['options'] && '' !== $value && in_array( $value, $field['options'], true ) ) { $valid[ $key ] = $value; }
 		}
-		// IDs are validated against the event table, never used as raw SQL.
-		$known = array_flip( array_map( 'intval', wp_list_pluck( self::catalog(), 'id' ) ) );
-		return array_values( array_filter( $ids, static fn( int $id ): bool => isset( $known[ $id ] ) ) );
+		return $valid;
 	}
 
-	public static function query_args(): array {
-		return array( 'ecm_events' => self::event_ids() ?: array( 0 ) );
-	}
-
-	public static function hidden_fields(): string {
+	public static function field_inputs( array $ids ): string {
 		$html = '';
-		foreach ( self::query_args()['ecm_events'] as $id ) {
-			$html .= '<input type="hidden" name="ecm_events[]" value="' . esc_attr( $id ) . '">';
+		$filters = self::form_filters( $ids );
+		$catalog = array_filter( self::fields( $ids ), static fn( $field ) => ! empty( $field['options'] ) );
+		foreach ( $catalog as $key => $field ) {
+			$html .= '<label class="ecm-report-field">' . esc_html( $field['label'] ) . '<select name="ecm_field_filter[' . esc_attr( $key ) . ']"><option value="">همه مقادیر</option>';
+			foreach ( $field['options'] as $option ) {
+				$html .= '<option value="' . esc_attr( $option ) . '" ' . selected( $filters[ $key ] ?? '', $option, false ) . '>' . esc_html( $option ) . '</option>';
+			}
+			$html .= '</select></label>';
 		}
-		return $html;
+		return $html ? '<div class="ecm-scope-grid ecm-report-filter__fields">' . $html . '</div>' : '';
 	}
 
-	/** A common selector used by the reports header, keeping the list compact. */
-	public static function selector( string $view, bool $admin ): string {
-		$ids = self::event_ids();
-		$selected = array_flip( $ids );
-		$events = self::catalog();
-		$base = $admin ? admin_url( 'admin.php?page=ecm-reports' ) : ECM_Reports::url( $view, array(), false );
-		$label = ! $ids ? 'همه رویدادها' : implode( '، ', array_map( static function ( int $id ): string {
-			$event = self::event( $id );
-			return $event ? (string) $event->title : 'رویداد نامعتبر';
-		}, $ids ) );
-		ob_start();
-		?>
-		<form class="ecm-report-scope" method="get" action="<?php echo esc_url( $base ); ?>">
-			<?php if ( $admin ) : ?><input type="hidden" name="page" value="ecm-reports"><?php elseif ( isset( $_GET['ecm_portal_view'] ) ) : ?><input type="hidden" name="ecm_portal_view" value="reports"><?php endif; ?>
-			<input type="hidden" name="ecm_view" value="<?php echo esc_attr( $view ); ?>">
-			<details><summary>رویدادهای گزارش: <strong><?php echo esc_html( $label ); ?></strong></summary>
-			<div class="ecm-report-scope__choices"><label><input type="checkbox" name="ecm_events[]" value="0" <?php checked( ! $ids ); ?>> همه رویدادها</label>
-			<?php foreach ( $events as $event ) : ?><label><input type="checkbox" name="ecm_events[]" value="<?php echo esc_attr( $event->id ); ?>" <?php checked( isset( $selected[ (int) $event->id ] ) ); ?>> <?php echo esc_html( $event->title ); ?></label><?php endforeach; ?></div>
-			<button class="ecm-button ecm-button--primary" type="submit">اعمال رویدادها</button></details>
-		</form>
-		<?php
-		return (string) ob_get_clean();
+	public static function field_sql( array $filters, string $column, array &$where, array &$args ): void {
+		foreach ( $filters as $key => $value ) {
+			$path = '$."' . sanitize_key( $key ) . '"';
+			$document = "CASE WHEN JSON_VALID({$column}) THEN {$column} ELSE '{}' END";
+			$encoded = wp_json_encode( $value, JSON_UNESCAPED_UNICODE );
+			if ( defined( 'DB_ENGINE' ) && 'sqlite' === DB_ENGINE ) {
+				$extracted = "JSON_EXTRACT({$document},%s)";
+				$where[] = "(CASE WHEN JSON_TYPE({$document},%s)='array' THEN (INSTR({$extracted},%s)>0 OR INSTR({$extracted},%s)>0) ELSE {$extracted}=%s END)";
+				array_push( $args, $path, $path, $encoded, $path, wp_json_encode( $value ), $path, $value );
+				continue;
+			}
+			$where[] = "JSON_CONTAINS({$document}, %s, %s)=1";
+			array_push( $args, $encoded, $path );
+		}
 	}
 
-	public static function sql_in( string $column ): string {
-		$ids = self::event_ids();
-		if ( ! $ids ) {
-			return '';
+	public static function metrics( array $ids ): string {
+		if ( ! $ids || ! ECM_Flow::ready() ) { return ''; }
+		global $wpdb;
+		$flow = ECM_DB::table( 'workflow' );
+		$receipts = ECM_DB::table( 'workflow_receipts' );
+		$audit = ECM_DB::table( 'events' );
+		$registrations = ECM_DB::table( 'registrations' );
+		$scope = self::condition( 'w.event_id', $ids );
+		$storage = $wpdb->get_results( "SELECT w.event_id,COUNT(p.id) uploads,COALESCE(SUM(p.byte_size),0) bytes FROM {$flow} w INNER JOIN {$receipts} p ON p.registration_id=w.registration_id WHERE {$scope} GROUP BY w.event_id", OBJECT_K );
+		$edit_scope = self::condition( 'r.event_id', $ids );
+		$edits = $wpdb->get_results( "SELECT r.event_id,COUNT(*) edits,COUNT(DISTINCT r.id) edited FROM {$audit} a INNER JOIN {$registrations} r ON r.id=a.registration_id WHERE {$edit_scope} AND r.is_test=0 AND a.event_type IN ('workflow_edit_workflow','registration_self_edited') GROUP BY r.event_id", OBJECT_K );
+		$html = '<section class="ecm-report-storage" aria-label="حجم رسیدها و ویرایش‌ها">';
+		foreach ( $ids as $id ) {
+			$event = ECM_Events::event( $id );
+			if ( ! $event ) { continue; }
+			$html .= '<span><strong>' . esc_html( $event->title ) . '</strong> · ' . esc_html( size_format( (int) ( $storage[ $id ]->bytes ?? 0 ), 1 ) ?: '۰ بایت' ) . ' در ' . (int) ( $storage[ $id ]->uploads ?? 0 ) . ' نسخهٔ رسید · ' . (int) ( $edits[ $id ]->edits ?? 0 ) . ' ویرایش در ' . (int) ( $edits[ $id ]->edited ?? 0 ) . ' پرونده</span>';
 		}
-		return ' AND ' . $column . ' IN (' . implode( ',', array_map( 'absint', $ids ) ) . ')';
+		return $html . '</section>';
 	}
 }

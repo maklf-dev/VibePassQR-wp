@@ -104,7 +104,7 @@ final class ECM_Public {
 		wp_enqueue_script( 'ecm-public' );
 	}
 
-	private function shell( string $content, string $class = '', string $title = '' ): string {
+	public function shell( string $content, string $class = '', string $title = '' ): string {
 		$event_slug = isset( $_GET['event'] ) ? sanitize_title( wp_unslash( $_GET['event'] ) ) : '';
 		$notice_event = $event_slug ? ECM_Events::event_by_slug( $event_slug ) : ECM_Events::event( ECM_Events::default_event_id() );
 		$fallback_title = $notice_event ? (string) $notice_event->title : (string) ECM_Utils::settings()['event_name'];
@@ -113,12 +113,21 @@ final class ECM_Public {
 
 	public function registration_shortcode(): string {
 		$this->assets();
+		if ( empty( $_GET['event'] ) && empty( $_GET['ecm_edit'] ) ) {
+			return $this->event_directory();
+		}
 		$event    = ECM_Events::requested_event();
 		if ( ! $event ) {
 			return $this->attendance_state( 'error', 'این رویداد منتشر نشده یا در دسترس نیست.', 'رویداد در دسترس نیست' );
 		}
 		if ( ! ECM_Events::is_publicly_active( $event ) ) {
 			return $this->attendance_state( 'warning', (string) $event->disabled_message, (string) $event->disabled_title );
+		}
+		if ( ECM_Flow::enabled( $event ) ) {
+			return ECM_Flow_Public::render( $event );
+		}
+		if ( ! empty( $_GET['ecm_edit'] ) && ! empty( ECM_Flow::settings( (int) $event->id )['edit_enabled'] ) ) {
+			return ECM_Flow_Public::render( $event, true );
 		}
 		$settings = ECM_Events::config( $event );
 		if ( ! ECM_Events::allows( $event, 'registration' ) ) {
@@ -159,7 +168,33 @@ final class ECM_Public {
 		return $this->shell( (string) ob_get_clean(), 'ecm-registration', (string) $event->title );
 	}
 
-	private function render_field( array $field, string $value = '', ?object $event = null ): string {
+	private function event_directory(): string {
+		wp_enqueue_style( 'ecm-flow', ECM_URL . 'assets/css/flow.css', array( 'ecm-design' ), ECM_VERSION );
+		$events = array_filter( ECM_Events::all(), static fn( $event ) => 'hidden' !== ECM_Events::lifecycle( $event ) );
+		usort( $events, static fn( $a, $b ) => array( ECM_Events::directory_date( $b ), (int) $b->id ) <=> array( ECM_Events::directory_date( $a ), (int) $a->id ) );
+		$html = '<div class="ecm-hero"><h1>دوره‌ها و رویدادها</h1></div><div class="ecm-content ecm-event-directory">';
+		if ( ! $events ) {
+			$html .= '<p>در حال حاضر رویدادی برای نمایش وجود ندارد.</p>';
+		}
+		foreach ( $events as $event ) {
+			$state = ECM_Events::lifecycle( $event );
+			if ( 'active' === $state && ! ECM_Events::allows( $event, 'registration' ) ) {
+				$state = 'ended';
+			}
+			$date = ECM_Events::directory_date( $event );
+			$html .= '<article class="ecm-directory-card ecm-directory-card--' . esc_attr( $state ) . '"><span class="ecm-event-state">' . esc_html( ECM_Events::lifecycle_labels()[ $state ] ) . '</span><h2>' . esc_html( $event->title ) . '</h2>';
+			if ( $date ) {
+				$html .= '<time datetime="' . esc_attr( $date ) . '">' . esc_html( $date ) . '</time>';
+			}
+			if ( 'active' === $state ) {
+				$html .= '<p><a class="ecm-button ecm-button--primary" href="' . esc_url( ECM_Events::registration_url( $event ) ) . '">ورود به ثبت‌نام</a></p>';
+			}
+			$html .= '</article>';
+		}
+		return $this->shell( $html . '</div>', 'ecm-registration', 'ثبت‌نام رویدادها' );
+	}
+
+	public function render_field( array $field, string|array $value = '', ?object $event = null, string $id_prefix = 'ecm-' ): string {
 		$key         = sanitize_key( $field['key'] ?? '' );
 		$type        = sanitize_key( $field['type'] ?? 'text' );
 		$label       = (string) ( $field['label'] ?? $key );
@@ -188,18 +223,19 @@ final class ECM_Public {
 			return (string) ob_get_clean();
 		}
 		$name = 'ecm_field[' . $key . ']';
+		$field_id = $id_prefix . $key;
 		ob_start();
 		?>
 		<div class="ecm-field <?php echo 'textarea' === $type ? 'ecm-field--full' : ''; ?>">
-			<label for="ecm-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?><?php if ( $required ) : ?><em>*</em><?php endif; ?></label>
+			<label for="<?php echo esc_attr( $field_id ); ?>"><?php echo esc_html( $label ); ?><?php if ( $required ) : ?><em>*</em><?php endif; ?></label>
 			<?php if ( 'textarea' === $type ) : ?>
-				<textarea id="ecm-<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $name ); ?>" placeholder="<?php echo esc_attr( $placeholder ); ?>" <?php echo $required ? 'required' : ''; ?>><?php echo esc_textarea( $value ); ?></textarea>
+				<textarea id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $name ); ?>" placeholder="<?php echo esc_attr( $placeholder ); ?>" <?php echo $required ? 'required' : ''; ?>><?php echo esc_textarea( $value ); ?></textarea>
 			<?php elseif ( 'select' === $type ) : ?>
-				<select id="ecm-<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $name ); ?>" <?php echo $required ? 'required' : ''; ?>><option value="">انتخاب کنید</option><?php foreach ( $options as $option ) : ?><option value="<?php echo esc_attr( $option ); ?>" <?php selected( $value, $option ); ?>><?php echo esc_html( $option ); ?></option><?php endforeach; ?></select>
+				<select id="<?php echo esc_attr( $field_id ); ?>" name="<?php echo esc_attr( $name ); ?>" <?php echo $required ? 'required' : ''; ?>><option value="">انتخاب کنید</option><?php foreach ( $options as $option ) : ?><option value="<?php echo esc_attr( $option ); ?>" <?php selected( $value, $option ); ?>><?php echo esc_html( $option ); ?></option><?php endforeach; ?></select>
 			<?php elseif ( in_array( $type, array( 'radio', 'checkbox' ), true ) ) : ?>
-				<div class="ecm-choices" <?php echo $required && 'checkbox' === $type ? 'data-ecm-required-group' : ''; ?>><?php foreach ( $options as $index => $option ) : ?><label><input type="<?php echo esc_attr( $type ); ?>" name="<?php echo esc_attr( $name . ( 'checkbox' === $type ? '[]' : '' ) ); ?>" value="<?php echo esc_attr( $option ); ?>" <?php echo $required && 'radio' === $type && 0 === $index ? 'required' : ''; ?>> <span><?php echo esc_html( $option ); ?></span></label><?php endforeach; ?></div>
+				<div class="ecm-choices" <?php echo $required && 'checkbox' === $type ? 'data-ecm-required-group' : ''; ?>><?php foreach ( $options as $index => $option ) : ?><label><input type="<?php echo esc_attr( $type ); ?>" name="<?php echo esc_attr( $name . ( 'checkbox' === $type ? '[]' : '' ) ); ?>" value="<?php echo esc_attr( $option ); ?>" <?php checked( in_array( (string) $option, (array) $value, true ) ); ?> <?php echo $required && 'radio' === $type && 0 === $index ? 'required' : ''; ?>> <span><?php echo esc_html( $option ); ?></span></label><?php endforeach; ?></div>
 			<?php else : ?>
-				<input id="ecm-<?php echo esc_attr( $key ); ?>" type="<?php echo esc_attr( in_array( $type, array( 'text', 'email', 'tel', 'number', 'date', 'time', 'url' ), true ) ? $type : 'text' ); ?>" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" placeholder="<?php echo esc_attr( $placeholder ); ?>" <?php echo 'tel' === $type ? 'inputmode="numeric" autocomplete="tel" maxlength="11" pattern="[0۰٠][9۹٩][0-9۰-۹٠-٩]{9}" data-ecm-mobile' : ''; ?> <?php echo $required ? 'required' : ''; ?>>
+				<input id="<?php echo esc_attr( $field_id ); ?>" type="<?php echo esc_attr( in_array( $type, array( 'text', 'email', 'tel', 'number', 'date', 'time', 'url' ), true ) ? $type : 'text' ); ?>" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" placeholder="<?php echo esc_attr( $placeholder ); ?>" <?php echo 'tel' === $type ? 'inputmode="numeric" autocomplete="tel" maxlength="11" pattern="[0۰٠][9۹٩][0-9۰-۹٠-٩]{9}" data-ecm-mobile' : ''; ?> <?php echo $required ? 'required' : ''; ?>>
 			<?php endif; ?>
 		</div>
 		<?php
@@ -210,6 +246,10 @@ final class ECM_Public {
 		$event_id = absint( $_POST['ecm_event_id'] ?? 0 );
 		$event    = ECM_Events::event( $event_id );
 		$redirect = $event ? ECM_Events::registration_url( $event ) : ECM_Utils::page_url( 'registration' );
+		if ( ECM_Flow::enabled( $event ) ) {
+			wp_safe_redirect( $redirect, 303 );
+			exit;
+		}
 		if ( ! isset( $_POST['ecm_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['ecm_nonce'] ) ), 'ecm_register' ) ) {
 			self::record_registration_rejection( $event_id, 'security' );
 			wp_safe_redirect( add_query_arg( 'ecm_error', 'security', $redirect ) );
@@ -451,7 +491,7 @@ final class ECM_Public {
 		exit;
 	}
 
-	private function sanitize_field_value( $value, string $type, array $options ) {
+	public function sanitize_field_value( $value, string $type, array $options ) {
 		if ( is_array( $value ) ) {
 			$values = array_map( static fn( $item ) => self::limit_text( sanitize_text_field( $item ), 500 ), $value );
 			return array_values( array_intersect( $values, array_map( 'strval', $options ) ) );
@@ -538,7 +578,7 @@ final class ECM_Public {
 		return true;
 	}
 
-	private function index_fields( int $registration_id, array $data, array $fields ): void {
+	public function index_fields( int $registration_id, array $data, array $fields ): void {
 		global $wpdb;
 		$types = array();
 		foreach ( $fields as $field ) {
@@ -581,7 +621,7 @@ final class ECM_Public {
 			global $wpdb;
 			$table  = ECM_DB::table( 'links' );
 			$ticket = sanitize_text_field( wp_unslash( $_GET['ticket'] ) );
-			$valid  = preg_match( '/^[a-f0-9]{64}$/', $ticket ) && $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE token_hash=%s AND used_at IS NULL AND expires_at>%s", hash( 'sha256', $ticket ), ECM_Utils::now_utc() ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$valid  = preg_match( '/^(?:[a-f0-9]{64}|[A-Za-z0-9_-]{22})$/D', $ticket ) && $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE token_hash=%s AND used_at IS NULL AND expires_at>%s", hash( 'sha256', $ticket ), ECM_Utils::now_utc() ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			if ( ! $valid ) {
 				return $this->shell( '<div class="ecm-content"><h1>لینک قابل استفاده نیست</h1><p>این لینک مصرف شده، منقضی یا نامعتبر است.</p><a class="ecm-button ecm-button--primary" href="' . esc_url( ECM_Utils::page_url( 'recovery' ) ) . '">بازیابی با شماره موبایل</a></div>' );
 			}
@@ -601,6 +641,7 @@ final class ECM_Public {
 		?>
 		<div class="ecm-hero"><div><span class="ecm-kicker">RESTORE PASS</span><h1><?php echo esc_html( $settings['recovery_title'] ); ?></h1></div><a class="ecm-back" href="<?php echo esc_url( $event && ! ECM_Events::allows( $event, 'registration' ) ? home_url( '/' ) : ( $event ? ECM_Events::registration_url( $event ) : ECM_Utils::page_url( 'registration' ) ) ); ?>">بازگشت</a></div>
 		<div class="ecm-content"><?php echo wp_kses_post( $settings['recovery_intro'] ); ?><?php echo $this->notice_from_query(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+		<?php if ( ECM_Flow::enabled( $resolved_event ) ) : ?><p><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( ECM_Events::registration_url( $resolved_event ) ); ?>">ادامه پرونده مرحله‌ای با کد تأیید</a></p><?php elseif ( ! empty( ECM_Flow::settings( (int) $resolved_event->id )['edit_enabled'] ) ) : ?><p><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( add_query_arg( array( 'event' => $resolved_event->slug, 'ecm_edit' => 1 ), ECM_Utils::page_url( 'registration' ) ) ); ?>">ویرایش ثبت‌نام با کد تأیید</a></p><?php endif; ?>
 		<?php if ( ! empty( $settings['recovery_otp_enabled'] ) ) : ?>
 		<form class="ecm-form ecm-otp-recovery" data-ecm-otp-recovery data-event-id="<?php echo esc_attr( (int) $resolved_event->id ); ?>" novalidate>
 			<div class="ecm-otp-progress" aria-label="مراحل بازیابی"><span class="is-active" data-otp-progress="request">۱</span><i></i><span data-otp-progress="verify">۲</span></div>
@@ -670,6 +711,11 @@ final class ECM_Public {
 		if ( is_wp_error( $participant ) ) {
 			self::record_recovery_rejection( $event ? (int) $event->id : 0, sanitize_key( $participant->get_error_code() ) );
 			wp_safe_redirect( add_query_arg( 'ecm_error', 'ambiguous', $redirect ) );
+			exit;
+		}
+		if ( $participant && ECM_Flow::row( (int) $participant->registration_id ) ) {
+			$owner_event = ECM_Events::event( (int) $participant->event_id );
+			wp_safe_redirect( ECM_Utils::page_url( 'recovery', array( 'event' => $owner_event->slug ?? '' ) ), 303 );
 			exit;
 		}
 		if ( ! $participant || ! ECM_Participants::grant_recovered_card( $participant ) ) {

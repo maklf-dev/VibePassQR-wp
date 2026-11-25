@@ -56,6 +56,12 @@ final class ECM_Registration_Admin {
 		global $wpdb;
 		$table = ECM_DB::table( 'registrations' );
 		$list  = implode( ',', array_map( 'absint', $ids ) );
+		if ( ECM_Flow::ready() ) {
+			$workflow = ECM_DB::table( 'workflow' );
+			if ( $wpdb->get_var( "SELECT registration_id FROM {$workflow} WHERE registration_id IN ({$list}) LIMIT 1" ) ) {
+				wp_die( 'نوع اصلی یا تستی پرونده مرحله‌ای در زمان ساخت انتخاب می‌شود.', '', array( 'response' => 409, 'back_link' => true ) );
+			}
+		}
 		if ( $is_test ) {
 			$result = $wpdb->query( "UPDATE {$table} SET is_test=1,dedupe_phone_hash=NULL,updated_at=UTC_TIMESTAMP() WHERE id IN ({$list})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		} else {
@@ -101,6 +107,7 @@ final class ECM_Registration_Admin {
 
 		$wpdb->query( 'START TRANSACTION' );
 		try {
+			ECM_Flow::delete_for_registrations( $existing );
 			if ( $sms_ids ) {
 				$sms_list = implode( ',', $sms_ids );
 				self::query_or_throw( "DELETE FROM {$tables['sms_attempts']} WHERE sms_id IN ({$sms_list})" );

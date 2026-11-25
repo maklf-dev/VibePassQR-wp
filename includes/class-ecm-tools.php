@@ -165,6 +165,7 @@ final class ECM_Tools {
   $counts=array('registrations'=>count($registration_ids),'attendance'=>0,'sms'=>count($sms_ids),'files'=>$file_count,'participants'=>0);
   $wpdb->query('START TRANSACTION');
   try{
+   ECM_Flow::delete_for_registrations($registration_ids);
 	$otp_where=$range?$wpdb->prepare("registration_id IN ({$id_sql}) OR created_at BETWEEN %s AND %s",$from,$to):'1=1';$wpdb->query("DELETE FROM {$tables['otp']} WHERE {$otp_where}");
    if($sms_ids)$wpdb->query("DELETE FROM {$tables['sms_attempts']} WHERE sms_id IN ({$sms_id_sql})");
    if($sms_ids)$wpdb->query("DELETE FROM {$tables['sms']} WHERE id IN ({$sms_id_sql})");

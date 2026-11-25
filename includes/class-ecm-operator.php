@@ -36,7 +36,7 @@ final class ECM_Operator {
 		ob_start();
 		?>
 		<div class="ecm-operator-home" data-ecm-operator data-ajax-url="<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>" data-nonce="<?php echo esc_attr( wp_create_nonce( 'ecm_operator' ) ); ?>">
-			<div class="ecm-hero"><div><span class="ecm-kicker">FAST CHECK-IN</span><h1>پنل مدیر ثبت حضور</h1><p><?php echo esc_html( $user->display_name ); ?> · کد U<?php echo esc_html( $user->ID ); ?></p></div><div class="ecm-operator-head-actions"><?php if ( current_user_can( 'view_ecm_reports' ) ) : ?><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( ECM_Portal::url( array( 'ecm_portal_view' => 'reports' ) ) ); ?>">گزارش‌ها</a><?php endif; ?><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( ECM_Portal::url() ); ?>">خانه پنل</a></div></div>
+			<div class="ecm-hero"><div><span class="ecm-kicker">FAST CHECK-IN</span><h1>پنل مدیر ثبت حضور</h1><p><?php echo esc_html( $user->display_name ); ?> · کد U<?php echo esc_html( $user->ID ); ?></p></div><div class="ecm-operator-head-actions"><?php if ( current_user_can( 'view_ecm_reports' ) ) : ?><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( ECM_Portal::url( array( 'ecm_portal_view' => 'reports' ) ) ); ?>">گزارش‌ها</a><?php endif; ?><a class="ecm-button ecm-button--ghost" href="<?php echo esc_url( ECM_Portal::url() ); ?>">خانه پنل</a><?php echo ECM_Portal::logout_link(); ?></div></div>
 			<div class="ecm-content">
 				<?php if ( ! $events ) : ?><div class="ecm-state ecm-state--warning"><h2>رویداد فعالی برای شما تعریف نشده است</h2><p>مدیر کل باید نقش یا حساب شما را در دسترسی رویداد انتخاب کند.</p></div><?php else : ?>
 				<section class="ecm-scanner-panel">
@@ -174,6 +174,17 @@ final class ECM_Operator {
 		$resolved = '' !== trim( $input ) ? ECM_Utils::resolve_qr_token( $input ) : array( 'registration' => null, 'participant' => null );
 		$registration = $resolved['registration'];
 		$participant  = $resolved['participant'];
+		if ( ! empty( $_POST['scan_source'] ) ) {
+			$source = sanitize_key( (string) $_POST['scan_source'] );
+			$decoder = sanitize_key( (string) ( $_POST['scan_decoder'] ?? '' ) );
+			ECM_Diagnostics::record( 'qr', 'Operator lookup result', array(
+				'event_id' => $event_id, 'source' => $source, 'decoder' => $decoder,
+				'device' => ECM_Utils::request_device()['label'], 'payload_length' => strlen( $input ),
+				'format' => strlen( $token ) === 22 ? 'short' : ( $token ? 'legacy' : ( preg_match( '/^[A-Z0-9]{10}$/iD', $input ) ? 'manual_code' : 'unknown' ) ),
+				'fingerprint' => substr( hash_hmac( 'sha256', $token ?: $input, wp_salt( 'nonce' ) ), 0, 16 ),
+				'result' => ! $participant ? 'unresolved' : ( (int) $participant->event_id !== $event_id ? 'wrong_event' : ( ECM_Utils::registration_is_complete( $registration ) ? 'resolved' : 'inactive' ) ),
+			) );
+		}
 		if ( ! ECM_Utils::registration_is_complete( $registration ) || ! $participant || (int) $participant->event_id !== $event_id ) {
 			return new WP_Error( 'invalid_qr', 'این QR معتبر نیست یا متعلق به رویداد انتخاب‌شده نیست.', array( 'status' => 400 ) );
 		}

@@ -292,7 +292,7 @@ final class ECM_Upgrade {
   $secret=wp_generate_password(40,false,false);$participant_id=absint($link->participant_id??0);
   if($participant_id){
    $participant=ECM_DB::participant($participant_id);
-   if(!$participant || 'guest'!==(string)$participant->participant_type || (int)$participant->registration_id!==(int)$r->id){$wpdb->update($t,array('used_at'=>null),array('id'=>$link->id));return;}
+   if(!$participant || 'active'!==(string)$participant->status || 'guest'!==(string)$participant->participant_type || (int)$participant->registration_id!==(int)$r->id){$wpdb->update($t,array('used_at'=>null),array('id'=>$link->id));return;}
    if(false===$wpdb->update(ECM_DB::table('participants'),array('access_hash'=>wp_hash_password($secret),'updated_at'=>ECM_Utils::now_utc()),array('id'=>$participant_id),array('%s','%s'),array('%d'))){$wpdb->update($t,array('used_at'=>null),array('id'=>$link->id));return;}
    ECM_Utils::set_participant_card_grant($participant_id,$secret);ECM_Utils::log((int)$r->id,'card_recovered',array('via'=>'sms_link','participant_id'=>$participant_id,'participant_type'=>'guest'));
    wp_safe_redirect(ECM_Utils::page_url('card',array('id'=>$r->id,'participant'=>$participant->public_id,'scope'=>'guest')));exit;

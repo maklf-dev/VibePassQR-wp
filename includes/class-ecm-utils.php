@@ -63,7 +63,7 @@ final class ECM_Utils {
 	}
 
 	public static function registration_is_complete( ?object $registration ): bool {
-		return $registration && in_array( (string) $registration->payment_status, array( 'paid', 'not_required', 'offline_confirmed' ), true );
+		return $registration && in_array( (string) $registration->payment_status, array( 'paid', 'not_required', 'offline_confirmed' ), true ) && ! ECM_Flow::ticket_revoked( (int) $registration->id );
 	}
 
 	public static function now_utc(): string {
@@ -302,7 +302,8 @@ final class ECM_Utils {
 		if ( ! hash_equals( $expected, $parts[1] ) ) {
 			return null;
 		}
-		return ECM_DB::participant_by_public_id( $matches[1] );
+		$participant = ECM_DB::participant_by_public_id( $matches[1] );
+		return $participant && 'active' === $participant->status ? $participant : null;
 	}
 
 	/**
@@ -313,6 +314,12 @@ final class ECM_Utils {
 	public static function resolve_qr_token( string $token ): array {
 		if ( class_exists( 'ECM_Tickets' ) ) {
 			$short_participant = ECM_Tickets::resolve_attendance_input( $token );
+		if ( ! $short_participant ) {
+			$normalized = self::normalize_qr_token_input( $token );
+			if ( strlen( $normalized ) === 22 ) {
+				$short_participant = ECM_Tickets::resolve_attendance_input( $normalized );
+			}
+		}
 			if ( $short_participant ) {
 				return array( 'registration' => ECM_DB::registration( (int) $short_participant->registration_id ), 'participant' => $short_participant );
 			}

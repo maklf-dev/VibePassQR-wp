@@ -66,11 +66,14 @@ final class ECM_Tickets {
 	}
 
 	private static function ensure_token( object $participant, string $scope ): string {
+		if ( ECM_Flow::ticket_revoked( (int) $participant->registration_id ) || 'active' !== $participant->status ) {
+			return '';
+		}
 		$scope = in_array( $scope, array( 'card', 'attendance' ), true ) ? $scope : 'card';
 		global $wpdb;
 		$table = ECM_DB::table( 'ticket_tokens' );
-		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE participant_id=%d AND scope=%s AND status='active' LIMIT 1", (int) $participant->id, $scope ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		if ( $row ) {
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE participant_id=%d AND scope=%s LIMIT 1", (int) $participant->id, $scope ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( $row && 'active' === $row->status ) {
 			$plain = ECM_Upgrade::decrypt( (string) $row->token_cipher );
 			if ( self::valid_token( $plain ) && hash_equals( (string) $row->token_hash, hash( 'sha256', $plain ) ) ) {
 				return $plain;
@@ -202,7 +205,7 @@ final class ECM_Tickets {
 		}
 		$registration = ECM_DB::registration( (int) $participant->registration_id );
 		$event        = $registration ? ECM_Events::registration_event( $registration ) : null;
-		if ( ! $registration || ! ECM_Events::allows( $event, $card_token ? 'card' : 'attendance' ) ) {
+		if ( ! ECM_Utils::registration_is_complete( $registration ) || ! ECM_Events::allows( $event, $card_token ? 'card' : 'attendance' ) ) {
 			status_header( 403 );
 			wp_die( $event ? esc_html( $event->disabled_message ) : 'رویداد در دسترس نیست.', 'دسترسی بسته است', array( 'response' => 403 ) );
 		}

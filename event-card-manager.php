@@ -3,7 +3,7 @@
  * Plugin Name: Event Card Manager
  * Plugin URI:  https://github.com/maklf-dev/VibePassQR-wp
  * Description: فرم ثبت‌نام، پرداخت قابل توسعه، کارت QR امن، بازیابی کارت، حضور و غیاب و گزارش مدیریتی.
- * Version:     0.6.6.2
+ * Version:     0.7.1
  * Author:      maklf-dev
  * License:     GPL-2.0-or-later
  * Text Domain: event-card-manager
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'ECM_VERSION', '0.6.6.2' );
+define( 'ECM_VERSION', '0.7.1' );
 define( 'ECM_FILE', __FILE__ );
 define( 'ECM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'ECM_URL', plugin_dir_url( __FILE__ ) );
@@ -43,6 +43,13 @@ require_once ECM_PATH . 'includes/class-ecm-sms-transports.php';
 require_once ECM_PATH . 'includes/class-ecm-sms.php';
 require_once ECM_PATH . 'includes/class-ecm-otp.php';
 require_once ECM_PATH . 'includes/class-ecm-tools.php';
+require_once ECM_PATH . 'includes/class-ecm-flow.php';
+require_once ECM_PATH . 'includes/class-ecm-flow-public.php';
+require_once ECM_PATH . 'includes/class-ecm-flow-admin.php';
+require_once ECM_PATH . 'includes/class-ecm-flow-receipts.php';
+require_once ECM_PATH . 'includes/class-ecm-flow-edit.php';
+require_once ECM_PATH . 'includes/class-ecm-xlsx.php';
+require_once ECM_PATH . 'includes/class-ecm-report-scope.php';
 require_once ECM_PATH . 'includes/class-ecm-plugin.php';
 
 register_activation_hook( __FILE__, array( 'ECM_Activator', 'activate' ) );

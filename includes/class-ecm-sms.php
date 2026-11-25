@@ -111,12 +111,12 @@ final class ECM_SMS {
 
 	public static function queue( string $state, int $registration_id, string $event_key, array $meta = array() ): void {
 		$global = ECM_Utils::settings();
-		if ( empty( $global['sms_enabled'] ) || ! isset( self::states()[ $state ] ) ) {
+		if ( empty( $global['sms_enabled'] ) || ( ! isset( self::states()[ $state ] ) && ! ( str_starts_with( $state, 'flow_' ) && ! empty( $meta['workflow_rule'] ) ) ) ) {
 			return;
 		}
 		$registration = ECM_DB::registration( $registration_id );
-		if ( ! $registration || ! empty( $registration->is_test ) ) {
-			// A test card/check-in must never enqueue a real notification.
+		if ( ! $registration || ( ! empty( $registration->is_test ) && empty( $meta['explicit_manual_test'] ) ) ) {
+			// Tests are silent unless the administrator explicitly requests this message.
 			return;
 		}
 		global $wpdb;
@@ -131,6 +131,11 @@ final class ECM_SMS {
 		$identity    = $participant_id ? ECM_DB::participant_identity( $participant_id ) : null;
 		$settings    = self::effective_settings( $registration, $state, $meta );
 		$recipient   = $identity && ! empty( $identity->normalized_phone ) ? self::phone( (string) $identity->normalized_phone ) : self::phone( ECM_Utils::field_value( $data, (string) ( $event_config['sms_field'] ?? $settings['sms_field'] ?? 'mobile' ) ) );
+		if ( isset( $meta['recipient'] ) ) {
+			$recipient = self::phone( (string) $meta['recipient'] );
+			$participant_id = 0;
+			$identity = null;
+		}
 		if ( $identity ) {
 			$meta['participant_id']   = (int) $identity->id;
 			$meta['participant_type'] = (string) $identity->participant_type;
@@ -143,13 +148,16 @@ final class ECM_SMS {
 				return;
 			}
 		$vars      = self::variables( $registration, $data, $meta );
+		$vars['{review_note}'] = sanitize_text_field( (string) ( $meta['workflow_note'] ?? '' ) );
+		$workflow_event = ECM_Events::event( (int) $registration->event_id );
+		$vars['{resume_link}'] = $workflow_event ? ECM_Events::registration_url( $workflow_event ) : '';
 		$template  = (string) ( $settings[ 'sms_' . $state . '_text' ] ?? '' );
 		$profile_id = sanitize_key( (string) ( $settings['sms_pattern_profile'][ $state ] ?? '' ) );
 		$profile = $profile_id && isset( $settings['sms_pattern_profiles'][ $profile_id ] ) && is_array( $settings['sms_pattern_profiles'][ $profile_id ] ) ? $settings['sms_pattern_profiles'][ $profile_id ] : array();
 		$link_params = ! empty( $profile['params'] ) ? $profile['params'] : ( $settings['sms_params'][ $state ] ?? array() );
 		$needs_link = str_contains( $template, '{card_link}' ) || str_contains( wp_json_encode( $link_params ), '{card_link}' );
 		$link_participant = $identity && 'guest' === (string) $identity->participant_type ? $identity : null;
-		$vars['{card_link}'] = $needs_link ? ECM_Upgrade::link( $registration, $link_participant ) : '';
+		$vars['{card_link}'] = $needs_link && ( ! str_starts_with( $state, 'flow_' ) || in_array( $registration->payment_status, array( 'paid', 'not_required', 'offline_confirmed' ), true ) ) ? ECM_Upgrade::link( $registration, $link_participant ) : '';
 		$message = strtr( $template, $vars );
 		$payload = self::payload( $state, $recipient, $message, $vars, $settings, $registration );
 		$transport_key = sanitize_key( (string) ( $settings['sms_transport'] ?? 'edge' ) );
@@ -209,6 +217,10 @@ final class ECM_SMS {
 	/** Resolve global -> event -> session notification policy. */
 	private static function effective_settings( object $registration, string $state, array $meta ): array {
 		$settings = ECM_Utils::settings();
+		if ( str_starts_with( $state, 'flow_' ) && is_array( $meta['workflow_rule'] ?? null ) ) {
+			self::apply_rule( $settings, $state, $meta['workflow_rule'] );
+			return $settings;
+		}
 		$config   = ECM_Events::config_for_registration( $registration );
 		if ( empty( $config['sms_inherit'] ) ) {
 			$settings['sms_mode'] = 'pattern' === ( $config['sms_mode'] ?? '' ) ? 'pattern' : 'webservice';

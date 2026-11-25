@@ -178,7 +178,7 @@ final class ECM_Portal {
 		return 'ecm_login_' . substr( hash_hmac( 'sha256', $ip, wp_salt( 'nonce' ) ), 0, 32 );
 	}
 
-	private static function logout_link(): string {
+	public static function logout_link(): string {
 		$url = wp_nonce_url( add_query_arg( 'ecm_portal_action', self::LOGOUT_ACTION, self::url() ), self::LOGOUT_ACTION );
 		return '<a class="ecm-button ecm-button--ghost" href="' . esc_url( $url ) . '">خروج امن</a>';
 	}

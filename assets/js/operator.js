@@ -82,7 +82,7 @@
     lookupButton.disabled = true;
     setStatus('در حال بررسی کارت…', 'loading');
     try {
-      const view = await post('ecm_operator_lookup');
+      const view = await post('ecm_operator_lookup', {scan_source:source, scan_decoder:source === 'manual' ? 'manual' : ((detector && detector.kind) || 'unknown')});
       render(view);
       resultOpen = true;
       setStatus(view.scanned_type === 'guest' ? 'کارت مهمان شناسایی شد؛ مشخصات را بررسی و تأیید کنید.' : 'کارت معرف شناسایی شد؛ افراد موردنظر را انتخاب و تأیید کنید.', 'success');
@@ -200,7 +200,7 @@
         const sourceWidth = source.videoWidth || source.width || 0;
         const sourceHeight = source.videoHeight || source.height || 0;
         if (!sourceWidth || !sourceHeight) return [];
-        const scale = Math.min(1, 800 / sourceWidth);
+        const scale = Math.min(1, (source.videoWidth ? 1080 : 1600) / Math.max(sourceWidth, sourceHeight));
         const width = Math.max(1, Math.round(sourceWidth * scale));
         const height = Math.max(1, Math.round(sourceHeight * scale));
         if (decodeCanvas.width !== width) decodeCanvas.width = width;

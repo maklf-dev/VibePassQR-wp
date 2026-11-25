@@ -69,6 +69,11 @@ final class ECM_Events {
 		}
 			$stored = json_decode( (string) $event->config_json, true );
 			$config = is_array( $stored ) ? wp_parse_args( $stored, $defaults ) : $defaults;
+			if ( ECM_Flow::enabled( $event ) ) {
+				$workflow = ECM_Flow::settings( (int) $event->id );
+				$config['recovery_otp_enabled'] = 1;
+				$config['recovery_otp_pattern_profile'] = ( $workflow['otp_profile'] ?? '' ) ?: $config['recovery_otp_pattern_profile'];
+			}
 			foreach ( (array) ( $config['sms_rules'] ?? array() ) as $state => $rule ) {
 				$rule = is_array( $rule ) ? $rule : array();
 				if ( empty( $rule['mode'] ) ) $rule['mode'] = ! empty( $rule['pattern_profile'] ) || ! empty( $rule['pattern'] ) ? 'pattern' : 'inherit';
@@ -308,6 +313,26 @@ final class ECM_Events {
 		return $event && 'published' === (string) $event->status && ! empty( $event->enabled );
 	}
 
+	public static function lifecycle_labels(): array {
+		return array( 'active' => 'فعال', 'ended' => 'پایان‌یافته', 'stopped' => 'متوقف', 'hidden' => 'مخفی' );
+	}
+
+	public static function lifecycle( object $event ): string {
+		$config = self::config( $event );
+		if ( 'draft' === (string) $event->status ) {
+			return 'hidden';
+		}
+		$state = (string) ( $config['lifecycle'] ?? '' );
+		if ( ! isset( self::lifecycle_labels()[ $state ] ) ) {
+			return 'archived' === (string) $event->status ? 'ended' : ( empty( $event->enabled ) ? 'stopped' : ( empty( $config['access_registration'] ) && isset( $config['access_registration'] ) ? 'ended' : 'active' ) );
+		}
+		return 'active' === $state && ! self::is_publicly_active( $event ) ? 'stopped' : $state;
+	}
+
+	public static function directory_date( object $event ): string {
+		return (string) ( self::config( $event )['directory_date'] ?? '' ) ?: substr( (string) ( $event->created_at ?? '' ), 0, 10 );
+	}
+
 	/** Public surface switches are additive; missing keys preserve 0.6.6 behavior. */
 	public static function allows( ?object $event, string $surface ): bool {
 		if ( ! self::is_publicly_active( $event ) ) {
@@ -317,6 +342,9 @@ final class ECM_Events {
 			return false;
 		}
 		$config = self::config( $event );
+		if ( 'registration' === $surface && 'active' !== self::lifecycle( $event ) ) {
+			return false;
+		}
 		return ! array_key_exists( 'access_' . $surface, $config ) || ! empty( $config[ 'access_' . $surface ] );
 	}
 
@@ -382,13 +410,13 @@ final class ECM_Events {
 		);
 	}
 
-	public static function ensure_registration_entities( int $registration_id, ?array $data = null ): ?object {
+	public static function ensure_registration_entities( int $registration_id, ?array $data = null, bool $workflow_approval = false ): ?object {
 		global $wpdb;
 		$registrations = ECM_DB::table( 'registrations' );
 		$people        = ECM_DB::table( 'people' );
 		$participants  = ECM_DB::table( 'participants' );
 		$registration  = ECM_DB::registration( $registration_id );
-		if ( ! $registration ) {
+		if ( ! $registration || ( ! $workflow_approval && in_array( $registration->payment_status, array( 'workflow_pending', 'cancelled' ), true ) ) ) {
 			return null;
 		}
 
@@ -532,7 +560,7 @@ final class ECM_Events {
 	public static function process_migration_batch( int $limit = 100 ): int {
 		global $wpdb;
 		$table = ECM_DB::table( 'registrations' );
-		$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE primary_participant_id=0 ORDER BY id ASC LIMIT %d", max( 1, min( 500, $limit ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE primary_participant_id=0 AND payment_status NOT IN ('workflow_pending','cancelled') ORDER BY id ASC LIMIT %d", max( 1, min( 500, $limit ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$done  = 0;
 		foreach ( $ids as $registration_id ) {
 			if ( self::ensure_registration_entities( (int) $registration_id ) ) {
@@ -561,7 +589,7 @@ final class ECM_Events {
 	private static function schedule_migration_if_needed(): void {
 		global $wpdb;
 		$table   = ECM_DB::table( 'registrations' );
-		$pending = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE primary_participant_id=0" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$pending = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE primary_participant_id=0 AND payment_status NOT IN ('workflow_pending','cancelled')" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		update_option( 'ecm_participant_migration_pending', $pending, false );
 		if ( $pending && ! wp_next_scheduled( self::MIGRATION_HOOK ) ) {
 			wp_schedule_single_event( time() + 30, self::MIGRATION_HOOK );
@@ -576,7 +604,7 @@ final class ECM_Events {
 		$event_table   = ECM_DB::table( 'event_definitions' );
 		return array(
 			'default_event_id'       => self::default_event_id(),
-			'pending_registrations'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$registrations} WHERE primary_participant_id=0" ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			'pending_registrations'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$registrations} WHERE primary_participant_id=0 AND payment_status NOT IN ('workflow_pending','cancelled')" ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			'participants'           => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$participants}" ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				'guests'                 => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$participants} WHERE participant_type='guest'" ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			'people'                 => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$people}" ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -647,6 +675,10 @@ final class ECM_Events {
 							<label class="ecm-setting"><span>متن پایان ثبت‌نام</span><textarea name="event_settings[registration_closed_message]" rows="3"><?php echo esc_textarea( $config['registration_closed_message'] ?? '' ); ?></textarea></label>
 							</div><p><small>خاموش‌کردن کل رویداد، مثل نسخه 0.6.6، همه مسیرهای عمومی را می‌بندد. برای پایان ثبت‌نام فقط کلید «ثبت‌نام جدید» را خاموش کنید.</small></p></div>
 						<?php self::event_config_sections( $config, $current ); ?>
+						<div class="ecm-subpanel"><h3>نمایش در فهرست دوره‌ها</h3><div class="ecm-admin-grid ecm-admin-grid--2">
+						<label class="ecm-setting"><span>وضعیت کارت رویداد</span><select name="event_settings[lifecycle]"><?php foreach ( self::lifecycle_labels() as $key => $label ) : ?><option value="<?php echo esc_attr( $key ); ?>" <?php selected( $config['lifecycle'] ?? ( $current->id ? self::lifecycle( $current ) : 'active' ), $key ); ?>><?php echo esc_html( $label ); ?></option><?php endforeach; ?></select></label>
+						<label class="ecm-setting"><span>تاریخ نمایش و ترتیب کارت (اختیاری)</span><input type="date" name="event_settings[directory_date]" value="<?php echo esc_attr( $config['directory_date'] ?? '' ); ?>"></label>
+						</div><p>رویداد پیش‌نویس از فهرست عمومی پنهان است. وضعیت کارت، بازیابی کارت‌های قبلی و دسترسی‌های جداگانه را تغییر نمی‌دهد.</p></div>
 							<div class="ecm-subpanel">
 								<h3>مهمان‌ها و کارت‌های مستقل</h3>
 								<div class="ecm-admin-grid ecm-admin-grid--2">
@@ -802,6 +834,12 @@ final class ECM_Events {
 		}
 		$config_raw = isset( $_POST['event_settings'] ) && is_array( $_POST['event_settings'] ) ? wp_unslash( $_POST['event_settings'] ) : array();
 		$config     = self::sanitize_event_config( $config_raw, $fields, $old_config );
+		$lifecycle = sanitize_key( $config_raw['lifecycle'] ?? '' );
+		if ( isset( self::lifecycle_labels()[ $lifecycle ] ) ) {
+			$config['lifecycle'] = $lifecycle;
+		}
+		$directory_date = sanitize_text_field( $config_raw['directory_date'] ?? '' );
+		$config['directory_date'] = preg_match( '/^\d{4}-\d{2}-\d{2}$/D', $directory_date ) ? $directory_date : '';
 		$session_rows = isset( $_POST['sessions'] ) && is_array( $_POST['sessions'] ) ? wp_unslash( $_POST['sessions'] ) : array();
 		foreach ( $session_rows as &$session_row ) {
 			$session_row['event_id'] = $id;

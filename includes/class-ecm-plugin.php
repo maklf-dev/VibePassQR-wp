@@ -25,6 +25,7 @@ final class ECM_Plugin {
 		ECM_Comprehensive_Report::hooks();
 		ECM_Portal::hooks();
 		ECM_Card_Document::hooks();
+		ECM_Flow::hooks();
 		add_action( 'init', array( $this, 'maybe_upgrade' ), 1 );
 		$public = new ECM_Public();
 		$public->hooks();
@@ -45,9 +46,10 @@ final class ECM_Plugin {
 
 	public function maybe_upgrade(): void {
 		if ( ECM_VERSION !== get_option( 'ecm_db_version' ) ) {
-			if ( '0.6.6.2' === ECM_VERSION && in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1' ), true ) ) {
-				// No schema changes: do not rebuild tables during active registrations.
-				update_option( 'ecm_db_version', ECM_VERSION, false );
+			if ( in_array( get_option( 'ecm_db_version' ), array( '0.6.6', '0.6.6.1', '0.6.6.2', '0.7.0' ), true ) ) {
+				if ( ECM_Flow::ready() || ECM_Flow::install() ) {
+					update_option( 'ecm_db_version', ECM_VERSION, false );
+				}
 				return;
 			}
 			ECM_Activator::activate();

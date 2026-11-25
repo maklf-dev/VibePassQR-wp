@@ -22,7 +22,7 @@ final class ECM_Diagnostics {
 		if ( ! self::enabled() ) {
 			return;
 		}
-		$allowed = array( 'migration', 'capability', 'pages', 'registration', 'attendance', 'sms', 'ticket', 'storage', 'portal', 'maintenance', 'system' );
+		$allowed = array( 'migration', 'capability', 'pages', 'registration', 'attendance', 'sms', 'ticket', 'storage', 'portal', 'maintenance', 'system', 'workflow', 'qr' );
 		$channel = sanitize_key( $channel );
 		if ( ! in_array( $channel, $allowed, true ) ) {
 			$channel = 'system';
@@ -49,6 +49,7 @@ final class ECM_Diagnostics {
 		$action = isset( $_REQUEST['action'] ) && is_scalar( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( (string) $_REQUEST['action'] ) ) : '';
 		$page   = isset( $_GET['page'] ) && is_scalar( $_GET['page'] ) ? sanitize_key( wp_unslash( (string) $_GET['page'] ) ) : '';
 		$path   = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : '';
+		$path = preg_replace( '#(/(?:a|t)/)[A-Za-z0-9_-]{22}(?=/|$)#', '$1[redacted]', $path );
 		$route  = $action ? ( wp_doing_ajax() ? 'ajax_' : 'form_' ) . $action : ( $page ? 'admin_' . $page : $path );
 		return array(
 			'request_id'     => class_exists( 'ECM_Activity' ) ? ECM_Activity::request_id() : '',
